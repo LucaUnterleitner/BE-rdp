@@ -3,7 +3,7 @@
 import { icon } from './icons.js';
 import {
   esc, $, $$, call, toast, confirmDialog, errorDialog, announce, showMenu, openDialog,
-  formatWhen, formatDateTime, formatTime, formatDuration, initials,
+  formatWhen, formatDateTime, formatTime, formatDuration, initials, patchHtml,
 } from './ui.js';
 import {
   setContext, openConnectDialog, runConnect, openEditDialog, importRdpFiles, openCredentialDialog, removeCredential,
@@ -727,8 +727,12 @@ function renderShell() {
 }
 
 let renderToken = 0;
+let lastHtml = '';
+let lastPage = '';
 async function render({ focus = false } = {}) {
   if (!state.info) return;
+  // Nothing to draw while the window is hidden or minimized; catch up when it becomes visible.
+  if (document.hidden && !focus) { state.dirty = true; return; }
   const token = ++renderToken;
   const main = $('#main');
   const scroll = main.scrollTop;
@@ -754,7 +758,13 @@ async function render({ focus = false } = {}) {
   if (state.info.access.allowed && !state.loadError && !['settings', 'help'].includes(r.name)) {
     html = html.replace('<div class="page">', `<div class="page">${globalBanners()}`);
   }
-  main.innerHTML = html;
+  // A new page is drawn from scratch. Updates of the same page only touch what changed, and nothing at all when nothing did.
+  const page = `${r.name}:${r.id || ''}`;
+  const changed = html !== lastHtml;
+  if (page !== lastPage || focus) main.innerHTML = html;
+  else if (changed) patchHtml(main, html);
+  lastHtml = html;
+  lastPage = page;
 
   $$('.nav__item').forEach((b) => {
     const current = b.dataset.nav === r.name || (r.name === 'details' && b.dataset.nav === 'systems');
@@ -767,7 +777,7 @@ async function render({ focus = false } = {}) {
   $('#bell .icon-btn__dot').hidden = !state.unread;
   $('#bell').setAttribute('aria-label', state.unread ? `Notifications, ${state.unread} new` : 'Notifications');
 
-  if (r.name === 'details') {
+  if (r.name === 'details' && changed) {
     const c = state.connections.find((x) => x.id === r.id);
     if (c) hydrateCredentials(c);
   }
@@ -802,6 +812,7 @@ function softRender() {
   render();
 }
 document.addEventListener('bp:dialog-closed', () => { if (state.dirty && !document.querySelector('.overlay')) render(); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden && state.dirty) softRender(); });
 
 /** Generic error state. A damaged system list gets its own recovery path. */
 function errorPage(message) {
@@ -1159,7 +1170,8 @@ document.addEventListener('keydown', (e) => {
 
 // Live session durations
 setInterval(() => {
-  $$('[data-duration-since]').forEach((el) => { el.textContent = formatDuration((Date.now() - Date.parse(el.dataset.durationSince)) / 1000); });
+  if (document.hidden) return;
+  $('[data-duration-since]').forEach((el) => { el.textContent = formatDuration((Date.now() - Date.parse(el.dataset.durationSince)) / 1000); });
 }, 15000);
 
 // ── Events from the main process ──────────────────────
@@ -1201,6 +1213,8 @@ function handleConnectRequest(id) {
 }
 
 (async function start() {
+  // Load the systems while the app info is still on its way; loadData draws once both are there.
+  const data = loadData();
   try {
     state.info = await call(window.rdp.appInfo());
   } catch (err) {
@@ -1209,7 +1223,7 @@ function handleConnectRequest(id) {
   }
   renderShell();
   render();
-  await loadData();
+  await data;
   if (state.pendingConnect) {
     const id = state.pendingConnect;
     state.pendingConnect = null;

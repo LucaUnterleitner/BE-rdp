@@ -254,3 +254,54 @@ export function formatDuration(seconds) {
 export function initials(name) {
   return String(name || '?').split(/[\s.\\_-]+/).filter(Boolean).slice(-2).map((p) => p[0].toUpperCase()).join('') || '?';
 }
+
+// ── Incremental DOM updates ───────────────────────────
+/**
+ * Updates the children of `target` to match `html`, touching only nodes that differ. Unchanged
+ * elements keep their DOM node, so focus, hover, text selection and open <details> survive updates.
+ */
+export function patchHtml(target, html) {
+  const tpl = document.createElement('template');
+  tpl.innerHTML = html;
+  patchChildren(target, tpl.content);
+}
+
+function sameKind(a, b) {
+  if (a.nodeType !== b.nodeType || a.nodeName !== b.nodeName) return false;
+  if (a.nodeType !== Node.ELEMENT_NODE) return true;
+  // Different ids or data-ids mean a different item (for example another system card at this position).
+  return (a.id || '') === (b.id || '') && (a.getAttribute('data-id') || '') === (b.getAttribute('data-id') || '');
+}
+
+function patchChildren(parent, next) {
+  const oldNodes = [...parent.childNodes];
+  const newNodes = [...next.childNodes];
+  newNodes.forEach((n, i) => {
+    const o = oldNodes[i];
+    if (!o) parent.appendChild(n);
+    else if (!sameKind(o, n)) parent.replaceChild(n, o);
+    else if (o.nodeType === Node.ELEMENT_NODE) patchElement(o, n);
+    else if (o.nodeValue !== n.nodeValue) o.nodeValue = n.nodeValue;
+  });
+  for (let i = newNodes.length; i < oldNodes.length; i++) oldNodes[i].remove();
+}
+
+function patchElement(o, n) {
+  const keepOpen = o.tagName === 'DETAILS'; // the user decides whether a <details> is open
+  for (const { name } of [...o.attributes]) if (!n.hasAttribute(name) && !(keepOpen && name === 'open')) o.removeAttribute(name);
+  for (const { name, value } of [...n.attributes]) if (!(keepOpen && name === 'open') && o.getAttribute(name) !== value) o.setAttribute(name, value);
+  if (o.tagName === 'TEXTAREA') {
+    if (o !== document.activeElement && o.value !== n.value) o.value = n.value;
+    return;
+  }
+  patchChildren(o, n);
+  // Form controls keep their state in properties, which attributes no longer change once the user has edited them.
+  if (o.tagName === 'INPUT') {
+    if (o.type === 'checkbox' || o.type === 'radio') o.checked = n.hasAttribute('checked');
+    else if (o !== document.activeElement && o.value !== n.getAttribute('value') && n.hasAttribute('value')) o.value = n.getAttribute('value');
+  }
+  if (o.tagName === 'SELECT') {
+    const sel = [...n.options].find((opt) => opt.hasAttribute('selected')) || n.options[0];
+    if (sel && o.value !== sel.value) o.value = sel.value;
+  }
+}

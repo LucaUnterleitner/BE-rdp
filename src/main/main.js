@@ -10,13 +10,11 @@ const { pathToFileURL } = require('node:url');
 
 const { Store, readPolicy, checkGroupAccess, currentUser, normalizeConnection, ID_PATTERN } = require('./store');
 const { CentralList } = require('./central');
-const { detectAndParse } = require('./importers');
 const { SessionManager, isLive } = require('./sessions');
 const { probe, probeMany } = require('./probe');
 const { applyPolicy, buildRdp, encodeRdp, decodeRdp, rdpToConnection, parseAddress } = require('./rdpfile');
 const { explainProbe, allReasons } = require('./errors');
 const win32 = require('./win32');
-const samples = require('./samples');
 
 const APP_ID = 'com.bearingpoint.remotedesktop';
 // Development only: a separate data folder (and therefore a separate single-instance lock) for test runs.
@@ -55,6 +53,7 @@ const inFlight = new Set();
 // Quick connect targets that were not saved as systems. Kept in memory for this app session only.
 const adhoc = new Map();
 let statusTimer = null;
+let lastFullStatusAt = 0;
 
 if (!app.requestSingleInstanceLock()) {
   app.exit(0);
@@ -86,15 +85,25 @@ async function start() {
   hardenSession();
   protocol.handle('app', serveRendererFile);
   registerIpc();
+  sessions.setBackground(startHidden);
+  lastFullStatusAt = Date.now(); // the first status check runs with the deferred work below, not on the first "show"
   createWindow();
-  createTray();
-  updateJumpList();
-  scheduleStatus();
-  if (access.allowed) refreshStatus().catch(() => {});
-  if (access.allowed && central.config) {
-    refreshCentral();
-    setInterval(refreshCentral, 60 * 60 * 1000);
-  }
+  // Everything the first frame does not need starts once the window has painted (or after 3 s at the latest).
+  let started = false;
+  const startBackgroundWork = () => {
+    if (started) return;
+    started = true;
+    createTray();
+    updateJumpList();
+    scheduleStatus();
+    if (access.allowed) refreshStatus().catch(() => {});
+    if (access.allowed && central.config) {
+      refreshCentral();
+      setInterval(refreshCentral, 60 * 60 * 1000);
+    }
+  };
+  win.once('ready-to-show', () => setTimeout(startBackgroundWork, 0));
+  setTimeout(startBackgroundWork, 3000);
 }
 
 async function refreshCentral() {
@@ -179,6 +188,17 @@ function createWindow() {
   Menu.setApplicationMenu(null);
   win.once('ready-to-show', () => { if (!startHidden) win.show(); });
   win.on('close', onWindowClose);
+  // Background work slows down while the window is hidden or minimized and catches up when it comes back.
+  const onForeground = () => {
+    if (sessions) sessions.setBackground(false);
+    const seconds = (store && store.getSettings().statusRefreshSeconds) || 60;
+    if (access && access.allowed && Date.now() - lastFullStatusAt > seconds * 1000) refreshStatus().catch(() => {});
+  };
+  const onBackground = () => { if (sessions) sessions.setBackground(true); };
+  win.on('show', onForeground);
+  win.on('restore', onForeground);
+  win.on('hide', onBackground);
+  win.on('minimize', onBackground);
   win.webContents.on('did-start-loading', () => { rendererReady = false; });
   win.loadURL(`${APP_ORIGIN}index.html`);
   // Development only: never available in the installed app, because it runs script from an environment variable.
@@ -310,6 +330,7 @@ function withStatus(conn) {
 }
 
 async function refreshStatus(ids) {
+  if (!ids) lastFullStatusAt = Date.now();
   const targets = allConnections().filter((c) => !ids || ids.includes(c.id)).map(probeTarget);
   const results = await probeMany(targets);
   for (const [id, r] of Object.entries(results)) status.set(id, r);
@@ -438,7 +459,7 @@ function registerIpc() {
   });
   handle('connections:samples', () => {
     const existing = new Set(store.listConnections().map((c) => c.host));
-    const added = samples.filter((s) => !existing.has(s.host)).map((s) => store.saveConnection(s));
+    const added = require('./samples').filter((s) => !existing.has(s.host)).map((s) => store.saveConnection(s));
     refreshStatus(added.map((a) => a.id)).catch(() => {});
     return added.length;
   });
@@ -468,7 +489,7 @@ function registerIpc() {
           continue;
         }
         if (size > 5 * 1024 * 1024) throw new Error('The file is too large.');
-        const parsed = detectAndParse(decodeRdp(fs.readFileSync(file)));
+        const parsed = require('./importers').detectAndParse(decodeRdp(fs.readFileSync(file)));
         if (!parsed.items.length) throw new Error(`No Remote Desktop connections were found in this ${parsed.format} file.`);
         if (parsed.warnings.length) items.push({ file: name, notice: `${parsed.format}: ${parsed.warnings.join(' ')}` });
         for (const it of parsed.items) {

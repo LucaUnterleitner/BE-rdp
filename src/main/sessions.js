@@ -22,6 +22,7 @@ const MSTSC = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'ms
 const RDPSIGN = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'rdpsign.exe');
 const FAST_POLL_MS = 2500;      // while a session is connecting or reconnecting
 const SLOW_POLL_MS = 10000;     // while sessions are active
+const BACKGROUND_POLL_MS = 20000; // while sessions are active and the app window is hidden or minimized
 const NO_LOG_GRACE_MS = 120000; // without a readable event log, treat a live client as active after this
 const RECONNECT_GIVE_UP_MS = 90000;
 const TMP_FILE_MAX_AGE_MS = 30000;
@@ -40,6 +41,7 @@ if ($ev) { ConvertTo-Json -InputObject @($ev) -Compress -Depth 4 } else { '[]' }
 class SessionManager extends EventEmitter {
   constructor({ tmpDir, focusWindow }) {
     super();
+    this.background = false;
     this.tmpDir = tmpDir;
     this.focusWindow = focusWindow;
     this.sessions = new Map();
@@ -132,6 +134,13 @@ class SessionManager extends EventEmitter {
     return publicView(session);
   }
 
+  /** Poll active sessions less often while nobody looks at the window. Connecting sessions stay fast. */
+  setBackground(on) {
+    const was = this.background;
+    this.background = Boolean(on);
+    if (was && !on && this.pollTimer) this.schedulePoll(0);
+  }
+
   schedulePoll(ms) {
     if (this.pollTimer) clearTimeout(this.pollTimer);
     this.pollTimer = setTimeout(() => this.poll(), ms);
@@ -156,7 +165,7 @@ class SessionManager extends EventEmitter {
       this.polling = false;
       const stillFast = [...this.sessions.values()].some((s) => this.children.has(s.id) && ['connecting', 'reconnecting'].includes(s.state));
       const anyLive = [...this.sessions.values()].some((s) => this.children.has(s.id) && isLive(s.state));
-      if (anyLive) this.schedulePoll(stillFast ? FAST_POLL_MS : SLOW_POLL_MS);
+      if (anyLive) this.schedulePoll(stillFast ? FAST_POLL_MS : this.background ? BACKGROUND_POLL_MS : SLOW_POLL_MS);
     }
   }
 
