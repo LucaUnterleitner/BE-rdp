@@ -1,0 +1,24 @@
+{
+  "allowedGroups": [
+    "CONTOSO\\BP-RDP-Users"
+  ],
+  "serviceDeskName": "the BearingPoint IT Service Desk",
+  "helpUrl": "https://servicedesk.example.com/remote-desktop",
+  "allowSavedCredentials": true,
+  "launchMode": "file",
+  "signingThumbprint": "",
+  "requireCredentialProtection": "remoteGuard",
+  "redirect": {
+    "drives": "none",
+    "clipboard": true
+  },
+  "notice": {
+    "title": "Planned gateway maintenance",
+    "message": "On Saturday 08:00–12:00 connections via the RD Gateway are not available."
+  },
+  "centralList": {
+    "url": "https://rdp-config.example.com/systems.json",
+    "publicKey": "<base64 SPKI of the Ed25519 public key>",
+    "maxAgeHours": 72
+  }
+}

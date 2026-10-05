@@ -1,0 +1,97 @@
+/*
+ * BearingPoint Remote Desktop: central theme file.
+ *
+ * ┌──────────────────────────────────────────────────────────────────────────┐
+ * │ BRAND COLORS ARE PLACEHOLDERS. Replace --bp-red and --bp-deep-red with   │
+ * │ the approved values from the BearingPoint Brand Center before release.   │
+ * │ The values below are neutral stand-ins, NOT official brand colors.       │
+ * │ Re-check WCAG contrast of black text on --bp-red after replacing.        │
+ * └──────────────────────────────────────────────────────────────────────────┘
+ */
+:root {
+  /* Official brand colors: PLACEHOLDER values, replace with approved values */
+  --bp-red: #e0353b;        /* PLACEHOLDER: black text on it = 4.7:1 */
+  --bp-deep-red: #7a1a22;   /* PLACEHOLDER */
+
+  /* Neutral palette */
+  --color-black: #000000;
+  --color-white: #ffffff;
+  --color-gray-50: #f7f7f7;
+  --color-gray-100: #eeeeee;
+  --color-gray-200: #dddddd;
+  --color-gray-300: #c7c7c7;
+  --color-gray-500: #6b6b6b; /* darkened from #777 so 13px metadata meets 4.5:1 on gray-50 */
+  --color-gray-700: #404040;
+  --color-gray-900: #171717;
+
+  /* Semantic colors: proposed UI colors, not official brand colors */
+  --color-success: #217346;
+  --color-warning: #9a6700;
+  --color-error: #b42318;
+  --color-info: #175cd3;
+  --color-success-bg: #ecf6f0;
+  --color-warning-bg: #fdf6e7;
+  --color-error-bg: #fdeeec;
+  --color-info-bg: #eef4fd;
+
+  /* Application roles */
+  --color-background: var(--color-gray-50);
+  --color-surface: var(--color-white);
+  --color-surface-muted: var(--color-gray-100);
+  --color-text-primary: var(--color-gray-900);
+  --color-text-secondary: var(--color-gray-500);
+  --color-border: var(--color-gray-200);
+  --color-border-strong: var(--color-gray-300);
+  --color-focus: var(--bp-red);
+  --color-primary: var(--bp-red);
+  --color-primary-dark: var(--bp-deep-red);
+  --color-on-primary: var(--color-black);
+  --color-selected-bg: #fbf1f1;
+
+  /* Typography */
+  --font-family: Aptos, "Segoe UI", Arial, sans-serif;
+  --text-display: 600 32px/40px var(--font-family);
+  --text-page-title: 600 28px/36px var(--font-family);
+  --text-section: 600 20px/28px var(--font-family);
+  --text-card-title: 600 16px/24px var(--font-family);
+  --text-body: 400 14px/20px var(--font-family);
+  --text-body-strong: 600 14px/20px var(--font-family);
+  --text-secondary: 400 13px/18px var(--font-family);
+  --text-label: 600 12px/16px var(--font-family);
+
+  /* Spacing */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+  /* Shape and elevation */
+  --radius-small: 4px;
+  --radius-medium: 8px;
+  --radius-large: 12px;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-card-hover: 0 2px 6px rgba(0, 0, 0, 0.10);
+  --shadow-dialog: 0 12px 32px rgba(0, 0, 0, 0.18);
+
+  /* Layout */
+  --topbar-height: 64px;
+  --sidebar-width: 240px;
+  --sidebar-collapsed: 72px;
+  --content-max: 1440px;
+
+  /* Motion */
+  --duration-fast: 120ms;
+  --duration-normal: 180ms;
+  --easing-standard: cubic-bezier(0.2, 0, 0, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast: 0ms;
+    --duration-normal: 0ms;
+  }
+}
