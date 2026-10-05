@@ -23,7 +23,6 @@ const DEFAULT_SETTINGS = {
   },
 };
 
-const ENVIRONMENTS = ['Production', 'Test', 'Development', 'Internal'];
 // Ids end up in HTML attributes and in jump list command lines, so only plain UUIDs are accepted.
 const ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const HOST_PATTERN = /^[A-Za-z0-9._-]+$/;
@@ -186,7 +185,6 @@ function normalizeConnection(input, defaults) {
     port,
     username,
     folder: String(c.folder || '').trim().slice(0, 80),
-    environment: ENVIRONMENTS.includes(c.environment) ? c.environment : 'Internal',
     os: String(c.os || '').trim().slice(0, 80),
     location: String(c.location || '').trim().slice(0, 80),
     tags: (Array.isArray(c.tags) ? c.tags : String(c.tags || '').split(','))
@@ -319,4 +317,4 @@ function mergeDeep(target, source) {
   return target;
 }
 
-module.exports = { ID_PATTERN, HOST_PATTERN, Store, readPolicy, checkGroupAccess, currentUser, normalizeConnection, mergeDeep, DEFAULT_SETTINGS, ENVIRONMENTS };
+module.exports = { ID_PATTERN, HOST_PATTERN, Store, readPolicy, checkGroupAccess, currentUser, normalizeConnection, mergeDeep, DEFAULT_SETTINGS };

@@ -99,7 +99,7 @@ test('central list: signature, rollback protection and offline cache', async () 
   const { publicKey, privateKey } = crypto.generateKeyPairSync('ed25519');
   const pub = publicKey.export({ format: 'der', type: 'spki' }).toString('base64');
   const id = crypto.randomUUID();
-  const docV2 = { schema: 'bp-rdp-systems/1', version: 2, systems: [{ id, name: 'Central A', host: 'central-a.example', environment: 'Production' }, { id: 'not-a-uuid', host: 'x' }] };
+  const docV2 = { schema: 'bp-rdp-systems/1', version: 2, systems: [{ id, name: 'Central A', host: 'central-a.example' }, { id: 'not-a-uuid', host: 'x' }] };
   const v2 = signed(docV2, privateKey);
 
   assert.ok(verifyDocument(v2.bytes, v2.signature, pub));

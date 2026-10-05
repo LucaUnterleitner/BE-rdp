@@ -7,7 +7,6 @@ let ctx = null;
 export function setContext(c) { ctx = c; }
 
 const RESOLUTIONS = [[1280, 720], [1366, 768], [1600, 900], [1920, 1080], [2560, 1440], [3840, 2160]];
-const ENVIRONMENTS = ['Production', 'Test', 'Development', 'Internal'];
 
 function locked(key) {
   const p = ctx.state.info.policy || {};
@@ -368,11 +367,11 @@ export async function runConnect(conn, overrides, { force = false, quick = false
 export function openEditDialog(existing = null) {
   const defaults = ctx.state.settings.defaults;
   const c = existing ? structuredClone(existing) : {
-    name: '', host: '', port: 3389, username: '', folder: '', environment: 'Internal', os: '', location: '', tags: [], description: '',
+    name: '', host: '', port: 3389, username: '', folder: '', os: '', location: '', tags: [], description: '',
     credentialMode: 'prompt', favorite: false,
     ...structuredClone(defaults),
   };
-  const ids = Object.fromEntries(['name', 'host', 'port', 'user', 'folder', 'env', 'os', 'loc', 'tags', 'desc'].map((k) => [k, uid(k)]));
+  const ids = Object.fromEntries(['name', 'host', 'port', 'user', 'folder', 'os', 'loc', 'tags', 'desc'].map((k) => [k, uid(k)]));
   const folders = [...new Set(ctx.state.connections.map((x) => x.folder).filter(Boolean))].sort();
   const tabs = [['general', 'General'], ['display', 'Display'], ['redirect', 'Devices and clipboard'], ['advanced', 'Gateway and security']];
 
@@ -384,14 +383,12 @@ export function openEditDialog(existing = null) {
         ${tabs.map(([k, l], i) => `<button class="tab" type="button" role="tab" id="tab-${k}" aria-controls="pane-${k}" aria-selected="${i === 0}" tabindex="${i === 0 ? 0 : -1}" data-tab="${k}">${l}</button>`).join('')}
       </div>
       <div role="tabpanel" id="pane-general" aria-labelledby="tab-general" data-pane="general">
-        <div class="field-row field-row--3">
+        <div class="field-row field-row--host">
           <div class="field"><label class="field__label" for="${ids.host}">Computer name or IP address (required)</label>
             <input class="input mono" id="${ids.host}" name="host" value="${esc(c.host)}" required autocomplete="off" spellcheck="false" placeholder="server01.domain.local" autofocus>
             <span class="field__error" data-err="host" hidden></span></div>
           <div class="field"><label class="field__label" for="${ids.port}">Port</label>
             <input class="input" id="${ids.port}" name="port" type="number" min="1" max="65535" value="${esc(c.port || 3389)}"></div>
-          <div class="field"><label class="field__label" for="${ids.env}">Environment</label>
-            ${select('environment', c.environment, ENVIRONMENTS.map((e) => [e, e]), { id: ids.env })}</div>
         </div>
         <div class="field-row" style="margin-top:16px">
           <div class="field"><label class="field__label" for="${ids.name}">Display name</label>
@@ -468,7 +465,7 @@ export function openEditDialog(existing = null) {
     const payload = {
       ...c, ...opts,
       host: f.host.value.trim(), port: Number(f.port.value) || 3389, name: f.name.value.trim(), username: f.username.value.trim(),
-      folder: f.folder.value.trim(), environment: f.environment.value, os: f.os.value.trim(), location: f.location.value.trim(),
+      folder: f.folder.value.trim(), os: f.os.value.trim(), location: f.location.value.trim(),
       tags: f.tags.value, description: f.description.value.trim(), favorite: f.favorite.checked,
     };
     try {

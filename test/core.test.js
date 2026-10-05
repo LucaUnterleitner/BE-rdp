@@ -95,9 +95,8 @@ test('connection validation rejects bad input', () => {
   assert.throws(() => normalizeConnection({ host: 'a b' }, DEFAULT_SETTINGS.defaults), /not allowed/);
   assert.throws(() => normalizeConnection({ host: 'x', port: 70000 }, DEFAULT_SETTINGS.defaults), /port/);
   assert.throws(() => normalizeConnection({ host: 'x', gateway: { mode: 'always', host: '' } }, DEFAULT_SETTINGS.defaults), /Gateway/);
-  const c = normalizeConnection({ host: 'x', tags: 'a, b ,,c', environment: 'Nope' }, DEFAULT_SETTINGS.defaults);
+  const c = normalizeConnection({ host: 'x', tags: 'a, b ,,c' }, DEFAULT_SETTINGS.defaults);
   assert.deepStrictEqual(c.tags, ['a', 'b', 'c']);
-  assert.strictEqual(c.environment, 'Internal');
 });
 
 test('probe reports reachable and refused ports', async () => {

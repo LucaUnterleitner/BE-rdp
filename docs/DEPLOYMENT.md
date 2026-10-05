@@ -75,7 +75,7 @@ IT publishes `systems.json` and a detached signature `systems.json.sig` next to 
 ```json
 { "schema": "bp-rdp-systems/1", "version": 42, "issuedAt": "2026-10-01T08:00:00Z", "expiresAt": "2026-12-31T00:00:00Z",
   "systems": [{ "id": "8f0c6a1e-2b3c-4d5e-8f9a-0b1c2d3e4f5a", "name": "Finance Prod", "host": "fin-prod.bpnet.local",
-    "folder": "Finance", "environment": "Production", "os": "Windows Server 2022", "tags": ["sap"],
+    "folder": "Finance", "os": "Windows Server 2022", "tags": ["sap"],
     "gateway": { "mode": "always", "host": "rdgw.example.com" }, "security": { "credentialProtection": "remoteGuard" } }] }
 ```
 

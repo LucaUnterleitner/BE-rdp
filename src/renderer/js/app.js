@@ -18,7 +18,7 @@ const state = {
   loaded: false,
   loadError: null,
   route: { name: 'dashboard', id: null },
-  filters: { q: '', status: '', environment: '', os: '', favorites: false, recent: false },
+  filters: { q: '', status: '', os: '', favorites: false, recent: false },
   view: readPref('view', 'grid'),
   filtersOpen: readPref('filters', 'closed') === 'open',
   notifications: [],
@@ -113,20 +113,16 @@ function statusBadge(c, { withLatency = false } = {}) {
   return `<span class="status status--${s.key}" ${title ? `data-tooltip="${esc(title)}"` : ''}>${visual}${esc(s.label)}${withLatency && s.latency !== undefined ? `<span class="status__latency">${s.latency} ms</span>` : ''}</span>`;
 }
 
-function envBadge(env) {
-  return `<span class="badge badge--env-chip badge--${esc(String(env).toLowerCase())}">${esc(env)}</span>`;
-}
-
 // ── Filtering ─────────────────────────────────────────
 /** Number of active filters in the collapsible panel (the search text is not counted). */
 function activeFilterCount() {
   const f = state.filters;
-  return [f.status, f.environment, f.os, f.favorites, f.recent].filter(Boolean).length;
+  return [f.status, f.os, f.favorites, f.recent].filter(Boolean).length;
 }
 
 function filtersActive() {
   const f = state.filters;
-  return Boolean(f.q || f.status || f.environment || f.os || f.favorites || f.recent);
+  return Boolean(f.q || f.status || f.os || f.favorites || f.recent);
 }
 
 function applyFilters(list) {
@@ -135,11 +131,10 @@ function applyFilters(list) {
   const weekAgo = Date.now() - 7 * 86400000;
   return list.filter((c) => {
     if (q) {
-      const hay = [c.name, c.host, c.environment, c.os, c.location, c.folder, ...(c.tags || [])].join(' ').toLowerCase();
+      const hay = [c.name, c.host, c.os, c.location, c.folder, ...(c.tags || [])].join(' ').toLowerCase();
       if (!q.split(/\s+/).every((t) => hay.includes(t))) return false;
     }
     if (f.status && statusOf(c).key !== f.status) return false;
-    if (f.environment && c.environment !== f.environment) return false;
     if (f.os && c.os !== f.os) return false;
     if (f.favorites && !c.favorite) return false;
     if (f.recent && !(c.lastConnectedAt && Date.parse(c.lastConnectedAt) > weekAgo)) return false;
@@ -160,7 +155,7 @@ function toolbarHtml({ showFavoritesFilter = true, showViewToggle = false } = {}
     <div class="search">
       <label class="visually-hidden" for="search">Search systems</label>
       ${icon('search')}
-      <input class="input" id="search" type="search" value="${esc(f.q)}" placeholder="Search by name, host, environment, OS, location or tag" autocomplete="off" spellcheck="false">
+      <input class="input" id="search" type="search" value="${esc(f.q)}" placeholder="Search by name, host, OS, location or tag" autocomplete="off" spellcheck="false">
     </div>
     <button class="btn btn--secondary filter-toggle" type="button" data-action="toggle-filters" aria-expanded="${state.filtersOpen}" aria-controls="filter-panel">
       ${icon('filter', 16)} Filters${activeFilterCount() ? ` <span class="filter-toggle__count" aria-label="${activeFilterCount()} active">${activeFilterCount()}</span>` : ''}
@@ -175,8 +170,6 @@ function toolbarHtml({ showFavoritesFilter = true, showViewToggle = false } = {}
     <div class="toolbar__row toolbar__filters" id="filter-panel" ${state.filtersOpen ? '' : 'hidden'}>
     <div class="filter"><label class="field__label" for="f-status">Status</label>
       <select class="select" id="f-status" data-filter="status">${opt('', 'All', f.status)}${opt('available', 'Available', f.status)}${opt('busy', 'Busy', f.status)}${opt('offline', 'Offline', f.status)}${opt('unknown', 'Unknown', f.status)}</select></div>
-    <div class="filter"><label class="field__label" for="f-env">Environment</label>
-      <select class="select" id="f-env" data-filter="environment">${opt('', 'All', f.environment)}${['Production', 'Test', 'Development', 'Internal'].map((e) => opt(e, e, f.environment)).join('')}</select></div>
     <div class="filter"><label class="field__label" for="f-os">Operating system</label>
       <select class="select" id="f-os" data-filter="os">${opt('', 'All', f.os)}${oses.map((o) => opt(o, o, f.os)).join('')}</select></div>
     ${showFavoritesFilter ? `<label class="check toolbar__check"><input type="checkbox" data-filter="favorites" ${f.favorites ? 'checked' : ''}><span>Favorites</span></label>` : ''}
@@ -203,7 +196,7 @@ function serverCard(c) {
       <p class="card__host">${esc(c.host)}${c.port !== 3389 ? `:${c.port}` : ''}</p>
       ${c.os ? `<p class="card__meta">${esc(c.os)}${c.location ? ` · ${esc(c.location)}` : ''}</p>` : (c.location ? `<p class="card__meta">${esc(c.location)}</p>` : '')}
     </div>
-    <div class="card__row">${statusBadge(c)} ${envBadge(c.environment)} ${c.sample ? '<span class="badge badge--sample" data-tooltip="Mock data for demonstration">Sample</span>' : ''}${c.source === 'central' ? `<span class="badge" data-tooltip="Provided by IT. Read-only.">${icon('shield', 16)} Managed by IT</span>` : ''}</div>
+    <div class="card__row">${statusBadge(c)} ${c.sample ? '<span class="badge badge--sample" data-tooltip="Mock data for demonstration">Sample</span>' : ''}${c.source === 'central' ? `<span class="badge" data-tooltip="Provided by IT. Read-only.">${icon('shield', 16)} Managed by IT</span>` : ''}</div>
     <div class="card__footer">
       <span class="card__meta">${c.lastConnectedAt ? `Last used: ${esc(formatWhen(c.lastConnectedAt))}` : 'Not used yet'}</span>
       ${connected && c.activeState === 'connecting'
@@ -222,7 +215,6 @@ function serverRow(c) {
       <span class="card__host">${esc(c.host)}</span>
     </div>
     <div role="cell" class="small">${esc(c.os || '–')}</div>
-    <div role="cell">${envBadge(c.environment)}</div>
     <div role="cell">${statusBadge(c)}</div>
     <div class="list__actions" role="cell">
       <button class="icon-btn fav-btn" type="button" data-action="favorite" data-id="${esc(c.id)}" aria-pressed="${c.favorite}" aria-label="${c.favorite ? `Remove ${esc(c.name)} from favorites` : `Add ${esc(c.name)} to favorites`}" data-tooltip="${c.favorite ? 'Remove from favorites' : 'Add to favorites'}">${icon('star')}</button>
@@ -237,7 +229,7 @@ function serverRow(c) {
 function systemsBlock(list) {
   if (state.view === 'list') {
     return `<div class="list" role="table" aria-label="Systems">
-      <div class="list__row list__head" role="row"><span role="columnheader">Name</span><span role="columnheader">Operating system</span><span role="columnheader">Environment</span><span role="columnheader">Status</span><span role="columnheader" class="visually-hidden">Actions</span></div>
+      <div class="list__row list__head" role="row"><span role="columnheader">Name</span><span role="columnheader">Operating system</span><span role="columnheader">Status</span><span role="columnheader" class="visually-hidden">Actions</span></div>
       ${list.map(serverRow).join('')}</div>`;
   }
   return `<div class="grid">${list.map(serverCard).join('')}</div>`;
@@ -486,7 +478,7 @@ function viewDetails(id) {
       ${c.source === 'central' ? '' : `<button class="btn btn--secondary" type="button" data-action="edit" data-id="${esc(c.id)}">${icon('edit')} Edit</button>`}
       ${c.activeSessionId ? `<button class="btn btn--secondary" type="button" data-action="focus" data-session="${esc(c.activeSessionId)}">${icon('window')} Show window</button>`
         : `<button class="btn btn--primary" type="button" data-action="connect" data-id="${esc(c.id)}">Connect ${icon('arrowRight')}</button>`}`)}
-    <div class="card__row" style="margin:-12px 0 24px">${statusBadge(c, { withLatency: true })} ${envBadge(c.environment)} ${c.sample ? '<span class="badge badge--sample">Sample (mock data)</span>' : ''}${c.source === 'central' ? `<span class="badge">${icon('shield', 16)} Managed by IT (read-only)</span>` : ''}
+    <div class="card__row" style="margin:-12px 0 24px">${statusBadge(c, { withLatency: true })} ${c.sample ? '<span class="badge badge--sample">Sample (mock data)</span>' : ''}${c.source === 'central' ? `<span class="badge">${icon('shield', 16)} Managed by IT (read-only)</span>` : ''}
       <button class="btn btn--ghost btn--small" type="button" data-action="probe" data-id="${esc(c.id)}">${icon('refresh', 16)} Check now</button></div>
     ${st.key === 'offline' ? `<div class="alert alert--error" style="margin-bottom:24px">${icon('xCircle')}<div class="alert__body"><p class="alert__title">System not reachable</p><p class="alert__msg">${esc(OFFLINE_REASON[st.reason] || 'No response')}. Check that the system is online and that the VPN is active. Last checked ${esc(formatTime(c.status.checkedAt))}.</p></div></div>` : ''}
     <div class="two-col">
@@ -1065,7 +1057,7 @@ async function handleClick(e) {
       break;
     }
     case 'clear-filters':
-      state.filters = { q: '', status: '', environment: '', os: '', favorites: false, recent: false };
+      state.filters = { q: '', status: '', os: '', favorites: false, recent: false };
       render();
       $('#search') && $('#search').focus();
       break;
