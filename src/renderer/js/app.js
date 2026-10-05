@@ -8,7 +8,7 @@ import {
 import {
   setContext, openConnectDialog, runConnect, openEditDialog, importRdpFiles, openCredentialDialog, removeCredential,
 } from './dialogs.js';
-import { PROTOCOL_LABELS, parseTargets, describeTarget, defaultPort } from './targets.js';
+import { PROTOCOL_LABELS, ENABLED_PROTOCOLS, enabledTargets, describeTarget, defaultPort } from './targets.js';
 
 const state = {
   info: null,
@@ -108,6 +108,9 @@ function statusOf(c) {
 const OFFLINE_REASON = { dns: 'Name not found', refused: 'Remote Desktop not enabled', timeout: 'No response', unreachable: 'Network unreachable' };
 const REFUSED_BY_TYPE = { rdp: 'Remote Desktop not enabled', ssh: 'SSH server not running', web: 'Web server not responding' };
 
+/** Types are only shown when more than one connection type is switched on (see targets.js). */
+const SHOW_TYPES = ENABLED_PROTOCOLS.length > 1;
+
 /** Connection type of a system; older records without a type are RDP. */
 function protoOf(c) { return (c && c.protocol) || 'rdp'; }
 
@@ -120,6 +123,7 @@ const PROTOCOL_ICONS = { rdp: 'monitor', ssh: 'terminal', web: 'globe' };
 /** Type badge: icon plus text, never color alone. */
 function protocolBadge(c) {
   const p = protoOf(c);
+  if (!SHOW_TYPES && p === 'rdp') return '';
   return `<span class="badge badge--proto badge--proto-${p}">${icon(PROTOCOL_ICONS[p], 16)}${PROTOCOL_LABELS[p]}</span>`;
 }
 
@@ -186,7 +190,7 @@ function toolbarHtml({ showFavoritesFilter = true, showViewToggle = false } = {}
     <div class="search">
       <label class="visually-hidden" for="search">Search systems</label>
       ${icon('search')}
-      <input class="input" id="search" type="search" value="${esc(f.q)}" placeholder="Search by name, host, type, OS, location or tag" autocomplete="off" spellcheck="false">
+      <input class="input" id="search" type="search" value="${esc(f.q)}" placeholder="Search by name, host, ${SHOW_TYPES ? 'type, ' : ''}OS, location or tag" autocomplete="off" spellcheck="false">
     </div>
     <button class="btn btn--secondary filter-toggle" type="button" data-action="toggle-filters" aria-expanded="${state.filtersOpen}" aria-controls="filter-panel">
       ${icon('filter', 16)} Filters${activeFilterCount() ? ` <span class="filter-toggle__count" aria-label="${activeFilterCount()} active">${activeFilterCount()}</span>` : ''}
@@ -249,7 +253,7 @@ function serverRow(c) {
       <button class="card__title-btn" type="button" data-action="details" data-id="${esc(c.id)}" style="font:var(--text-body-strong)">${esc(c.name)}</button>
       <span class="card__host">${esc(addressOf(c))}</span>
     </div>
-    <div role="cell">${protocolBadge(c)}</div>
+    ${SHOW_TYPES ? `<div role="cell">${protocolBadge(c)}</div>` : ''}
     <div role="cell" class="small">${esc(c.os || '–')}</div>
     <div role="cell">${statusBadge(c)}</div>
     <div class="list__actions" role="cell">
@@ -264,8 +268,8 @@ function serverRow(c) {
 
 function systemsBlock(list) {
   if (state.view === 'list') {
-    return `<div class="list" role="table" aria-label="Systems">
-      <div class="list__row list__head" role="row"><span role="columnheader">Name</span><span role="columnheader">Type</span><span role="columnheader">Operating system</span><span role="columnheader">Status</span><span role="columnheader" class="visually-hidden">Actions</span></div>
+    return `<div class="list ${SHOW_TYPES ? '' : 'list--no-type'}" role="table" aria-label="Systems">
+      <div class="list__row list__head" role="row"><span role="columnheader">Name</span>${SHOW_TYPES ? '<span role="columnheader">Type</span>' : ''}<span role="columnheader">Operating system</span><span role="columnheader">Status</span><span role="columnheader" class="visually-hidden">Actions</span></div>
       ${list.map(serverRow).join('')}</div>`;
   }
   return `<div class="grid">${list.map(serverCard).join('')}</div>`;
@@ -1022,6 +1026,7 @@ const QC_HINT = {
 };
 
 function protocolAllowedHere(p) {
+  if (!ENABLED_PROTOCOLS.includes(p)) return false;
   const allowed = state.info && state.info.policy && state.info.policy.allowedProtocols;
   return !allowed || allowed.includes(p);
 }
@@ -1035,10 +1040,10 @@ function quickConnect(prefill = '') {
   const listId = 'qc-list';
   const dlg = openDialog({
     title: 'Quick connect',
-    subtitle: 'Enter an address to connect right away, or pick a saved system.',
+    subtitle: SHOW_TYPES ? 'Enter an address to connect right away, or pick a saved system.' : 'Enter a computer name or IP address to connect right away, or pick a saved system.',
     body: `<div class="search" style="max-width:none"><label class="visually-hidden" for="qc-input">Address or saved system</label>${icon('connect')}
-        <input class="input" id="qc-input" type="text" role="combobox" aria-expanded="true" aria-controls="${listId}" aria-autocomplete="list" aria-describedby="qc-examples" placeholder="server01, ssh admin@linux01 or https://ilo01" autocomplete="off" spellcheck="false" autofocus></div>
-      <p class="small muted" id="qc-examples" style="margin-top:6px">Examples: <span class="mono">server01</span> (Remote Desktop), <span class="mono">ssh admin@linux01</span> or <span class="mono">admin@linux01:2222</span> (SSH), <span class="mono">https://ilo01</span> (Web)</p>
+        <input class="input" id="qc-input" type="text" role="combobox" aria-expanded="true" aria-controls="${listId}" aria-autocomplete="list" ${SHOW_TYPES ? 'aria-describedby="qc-examples"' : ''} placeholder="${SHOW_TYPES ? 'server01, ssh admin@linux01 or https://ilo01' : 'for example server01.corp.local, 10.20.30.40 or 10.20.30.40:3390'}" autocomplete="off" spellcheck="false" autofocus></div>
+      ${SHOW_TYPES ? '<p class="small muted" id="qc-examples" style="margin-top:6px">Examples: <span class="mono">server01</span> (Remote Desktop), <span class="mono">ssh admin@linux01</span> or <span class="mono">admin@linux01:2222</span> (SSH), <span class="mono">https://ilo01</span> (Web)</p>' : ''}
       <ul class="qc-list" id="${listId}" role="listbox" aria-label="Connection targets"></ul>
       <label class="check" style="margin-top:8px"><input type="checkbox" id="qc-save"><span class="check__text"><span>Save to My systems</span><span class="check__help">Otherwise the address is used once and not stored. It still appears in Recent sessions.</span></span></label>
       <p class="small muted" style="margin-top:8px">Arrow keys to choose, Enter to connect, Esc to close.</p>`,
@@ -1055,15 +1060,15 @@ function quickConnect(prefill = '') {
     const matches = all.filter((c) => !q || [c.name, c.host, addressOf(c), ...(c.tags || [])].join(' ').toLowerCase().includes(q)).slice(0, 7);
     const saved = (t) => matches.some((c) => protoOf(c) === t.protocol && c.host.toLowerCase() === t.host.toLowerCase() && c.port === t.port);
     options = [];
-    for (const t of parseTargets(raw)) if (protocolAllowedHere(t.protocol) && !saved(t)) options.push({ type: 'address', target: t });
+    for (const t of enabledTargets(raw)) if (protocolAllowedHere(t.protocol) && !saved(t)) options.push({ type: 'address', target: t });
     for (const c of matches) options.push({ type: 'system', conn: c });
     index = Math.min(index, Math.max(0, options.length - 1));
     list.innerHTML = options.length ? options.map((o, i) => (o.type === 'address'
       ? `<li class="qc-item qc-item--address" role="option" id="qc-${i}" aria-selected="${i === index}" data-i="${i}">
-          <span class="qc-item__main"><strong>${icon(PROTOCOL_ICONS[o.target.protocol], 16)} ${esc(describeTarget(o.target))}</strong><span class="small muted">${QC_HINT[o.target.protocol]}</span></span>${i === index ? '<kbd>Enter</kbd>' : ''}</li>`
+          <span class="qc-item__main"><strong>${icon(SHOW_TYPES ? PROTOCOL_ICONS[o.target.protocol] : 'connect', 16)} ${esc(SHOW_TYPES ? describeTarget(o.target) : `Connect to ${o.target.host}${o.target.port !== 3389 ? `:${o.target.port}` : ''}`)}</strong><span class="small muted">${QC_HINT[o.target.protocol]}</span></span>${i === index ? '<kbd>Enter</kbd>' : ''}</li>`
       : `<li class="qc-item" role="option" id="qc-${i}" aria-selected="${i === index}" data-i="${i}">
           <span class="qc-item__main"><strong>${esc(o.conn.name)}</strong><span class="card__host">${esc(addressOf(o.conn))}</span></span>${protocolBadge(o.conn)} ${statusBadge(o.conn)}</li>`)).join('')
-      : `<li class="qc-empty">${raw ? 'Not a valid address, and no saved system matches.' : 'Type a computer name, IP address or web address.'}</li>`;
+      : `<li class="qc-empty">${raw ? 'Not a valid address, and no saved system matches.' : SHOW_TYPES ? 'Type a computer name, IP address or web address.' : 'Type a computer name or IP address.'}</li>`;
     if (options.length) input.setAttribute('aria-activedescendant', `qc-${index}`); else input.removeAttribute('aria-activedescendant');
   };
   const choose = async (i) => {

@@ -2,7 +2,7 @@
 
 import { icon } from './icons.js';
 import { esc, $, $$, call, openDialog, confirmDialog, toast, errorDialog } from './ui.js';
-import { PROTOCOLS, parseTargets, defaultPort, describeTarget } from './targets.js';
+import { PROTOCOLS, ENABLED_PROTOCOLS, parseTargets, defaultPort, describeTarget } from './targets.js';
 
 let ctx = null;
 export function setContext(c) { ctx = c; }
@@ -411,7 +411,8 @@ export function openEditDialog(existing = null) {
   c.ssh = { identityFile: '', jumpHost: '', ...(c.ssh || {}) };
   c.web = { scheme: 'https', path: '', ...(c.web || {}) };
   const allowed = (ctx.state.info.policy || {}).allowedProtocols || PROTOCOLS;
-  const types = PROTOCOLS.filter((p) => allowed.includes(p) || p === c.protocol);
+  // Only switched-on types are offered; an existing system keeps its own type so it can still be edited.
+  const types = PROTOCOLS.filter((p) => (ENABLED_PROTOCOLS.includes(p) && allowed.includes(p)) || p === c.protocol);
   const ids = Object.fromEntries(['name', 'host', 'port', 'user', 'folder', 'os', 'loc', 'tags', 'desc', 'key', 'jump', 'scheme', 'path', 'detect', 'preview'].map((k) => [k, uid(k)]));
   const folders = [...new Set(ctx.state.connections.map((x) => x.folder).filter(Boolean))].sort();
   const tabs = [['general', 'General'], ['display', 'Display'], ['redirect', 'Devices and clipboard'], ['advanced', 'Gateway and security']];
@@ -432,7 +433,7 @@ export function openEditDialog(existing = null) {
         <div class="field-row field-row--host">
           <div class="field"><label class="field__label" for="${ids.host}"><span data-host-label>${T.host}</span> (required)</label>
             <input class="input mono" id="${ids.host}" name="host" value="${esc(c.host)}" required autocomplete="off" spellcheck="false" placeholder="${T.hostPh}" autofocus>
-            <span class="field__help">You can also paste an address such as <span class="mono">ssh admin@linux01</span> or <span class="mono">https://ilo01</span>.</span>
+            ${types.length > 1 ? '<span class="field__help">You can also paste an address such as <span class="mono">ssh admin@linux01</span> or <span class="mono">https://ilo01</span>.</span>' : ''}
             <span class="field__error" data-err="host" hidden></span></div>
           <div class="field"><label class="field__label" for="${ids.port}">Port</label>
             <input class="input" id="${ids.port}" name="port" type="number" min="1" max="65535" value="${esc(c.port || defaultPort(c.protocol, c.web.scheme))}"></div>
@@ -524,7 +525,7 @@ export function openEditDialog(existing = null) {
   // Paste or type a full address ("ssh admin@host -p 2222", "https://ilo01/admin"): fill the fields from it.
   const detect = () => {
     const raw = f0.host.value.trim();
-    if (!/[@\s]|:\/\/|:\d+$/.test(raw)) return;
+    if (types.length < 2 || !/[@\s]|:\/\/|:\d+$/.test(raw)) return;
     const t = parseTargets(raw)[0];
     if (!t || !types.includes(t.protocol)) return;
     const radio = form.querySelector(`[name="protocol"][value="${t.protocol}"]`);

@@ -16,7 +16,7 @@ const { applyPolicy, buildRdp, encodeRdp, decodeRdp, rdpToConnection, parseAddre
 const { explainProbe, allReasons } = require('./errors');
 const win32 = require('./win32');
 const launchers = require('./launchers');
-const { parseTargets, PROTOCOL_LABELS } = require('../renderer/js/targets.js');
+const { enabledTargets, PROTOCOL_LABELS, ENABLED_PROTOCOLS } = require('../renderer/js/targets.js');
 
 const APP_ID = 'com.bearingpoint.remotedesktop';
 // Development only: a separate data folder (and therefore a separate single-instance lock) for test runs.
@@ -346,13 +346,16 @@ function probeTarget(c) {
   return { id: c.id, host: c.host, port: c.port || 3389 };
 }
 
-/** Connection types IT allows on this computer (all when the policy does not say). */
+/** Connection types enabled in this app version and allowed by IT on this computer (all enabled ones when the policy does not say). */
 function protocolAllowed(protocol) {
-  return !policy.allowedProtocols || policy.allowedProtocols.includes(protocol || 'rdp');
+  const p = protocol || 'rdp';
+  return ENABLED_PROTOCOLS.includes(p) && (!policy.allowedProtocols || policy.allowedProtocols.includes(p));
 }
 
 function assertProtocolAllowed(protocol) {
-  if (!protocolAllowed(protocol)) throw new Error(`${PROTOCOL_LABELS[protocol] || protocol} connections are switched off by IT policy.`);
+  const p = protocol || 'rdp';
+  if (!ENABLED_PROTOCOLS.includes(p)) throw new Error(`${PROTOCOL_LABELS[p] || p} connections are not available in this app version.`);
+  if (!protocolAllowed(p)) throw new Error(`${PROTOCOL_LABELS[p] || p} connections are switched off by IT policy.`);
 }
 
 function scheduleStatus() {
@@ -580,7 +583,7 @@ function registerIpc() {
   handle('sessions:connect', (id, options) => connect(id, options || {}));
   /** Quick connect: host name or IP (optionally :port) without creating a system first. */
   handle('sessions:quickTarget', ({ address, protocol, save } = {}) => {
-    const candidates = parseTargets(String(address || ''));
+    const candidates = enabledTargets(String(address || ''));
     const t = candidates.find((c) => c.protocol === protocol) || candidates[0];
     if (!t) throw new Error('Enter a computer name or IP address.');
     assertProtocolAllowed(t.protocol);

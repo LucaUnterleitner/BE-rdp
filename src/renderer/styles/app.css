@@ -272,7 +272,8 @@ a { color: inherit; }
 
 /* List rows */
 .list { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-medium); overflow: hidden; }
-.list__row { display: grid; grid-template-columns: minmax(220px, 2fr) 90px minmax(140px, 1fr) 140px auto; gap: var(--space-4); align-items: center; padding: var(--space-3) var(--space-4); border-top: 1px solid var(--color-border); }
+.list__row { display: grid; grid-template-columns: minmax(220px, 2fr) 90px minmax(140px, 1fr) 140px 196px; gap: var(--space-4); align-items: center; padding: var(--space-3) var(--space-4); border-top: 1px solid var(--color-border); }
+.list--no-type .list__row { grid-template-columns: minmax(220px, 2fr) minmax(140px, 1fr) 140px 196px; }
 .list__row:first-child { border-top: 0; }
 .list__row:hover { background: var(--color-gray-50); }
 .list__head { font: var(--text-label); color: var(--color-text-secondary); background: var(--color-gray-50); }
@@ -423,8 +424,11 @@ a { color: inherit; }
 @media (max-width: 1199px) {
   .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .two-col { grid-template-columns: 1fr; }
-  .list__row { grid-template-columns: minmax(200px, 2fr) 90px 140px auto; }
+  .list__row { grid-template-columns: minmax(200px, 2fr) 90px 140px 196px; }
   .list__row > :nth-child(3) { display: none; }
+  .list--no-type .list__row { grid-template-columns: minmax(200px, 2fr) 140px 196px; }
+  .list--no-type .list__row > :nth-child(2) { display: none; }
+  .list--no-type .list__row > :nth-child(3) { display: block; }
 }
 @media (max-width: 767px) {
   .grid { grid-template-columns: 1fr; }
@@ -433,8 +437,9 @@ a { color: inherit; }
   .field-row, .field-row--3, .field-row--host { grid-template-columns: 1fr; }
   .session { grid-template-columns: 1fr; }
   .session__actions { flex-direction: row; flex-wrap: wrap; }
-  .list__row { grid-template-columns: 1fr auto; }
+  .list__row { grid-template-columns: 1fr 196px; }
   .list__row > :nth-child(2), .list__row > :nth-child(3), .list__row > :nth-child(4) { display: none; }
+  .list--no-type .list__row > :nth-child(4) { display: flex; }
 }
 
 /* Headings receive programmatic focus after navigation for screen readers; no visible ring needed. */

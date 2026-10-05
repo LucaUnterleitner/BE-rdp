@@ -75,8 +75,12 @@ const MR = `<?xml version="1.0" encoding="utf-8"?>
 </Connections>`;
 
 test('mRemoteNG: maps RDP, SSH and HTTPS nodes, resolves inheritance, skips other protocols, drops passwords', () => {
-  const { items, warnings } = parseMremote(MR);
+  const { items, warnings } = parseMremote(MR, { protocols: ['rdp', 'ssh', 'web'] });
   assert.strictEqual(items.length, 3);
+  // With SSH and web switched off (the default for now) only RDP is imported.
+  const rdpOnly = parseMremote(MR, { protocols: ['rdp'] });
+  assert.strictEqual(rdpOnly.items.length, 1);
+  assert.ok(rdpOnly.warnings.some((w) => w.includes('SSH2: 1') && w.includes('HTTPS: 1')));
   const ssh = items[1].connection;
   assert.deepStrictEqual([ssh.protocol, ssh.host, ssh.port, ssh.username], ['ssh', 'linux.corp.example', 22, 'root']);
   const web = items[2].connection;

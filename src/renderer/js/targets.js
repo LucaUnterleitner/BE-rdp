@@ -2,6 +2,9 @@
 // Shared by the renderer (detection, previews) and the main process (authoritative validation before launch).
 
 export const PROTOCOLS = ['rdp', 'ssh', 'web'];
+// Connection types offered in the app. SSH and web are fully implemented but switched off for now;
+// add 'ssh' and/or 'web' here to bring them back (UI, quick connect, import and launch all follow this list).
+export const ENABLED_PROTOCOLS = ['rdp'];
 export const PROTOCOL_LABELS = { rdp: 'RDP', ssh: 'SSH', web: 'Web' };
 
 // Host names, IPv4 and IPv6. Never starting with "-" or ".", so a host can never be read as a program option.
@@ -116,6 +119,17 @@ export function parseTargets(input) {
   if ([443, 8443].includes(hp.port)) return [target('web', hp, false)];
   if (hp.port) return [target('rdp', hp, false)];
   return [target('rdp', hp, false), target('ssh', hp, false), target('web', hp, false)];
+}
+
+/**
+ * Targets limited to the enabled connection types. When a port suggests a switched-off type
+ * ("server01:22" while SSH is off), the address is used for RDP with that port, as before.
+ */
+export function enabledTargets(input, enabled = ENABLED_PROTOCOLS) {
+  const all = parseTargets(input).filter((t) => enabled.includes(t.protocol));
+  if (all.length || !enabled.includes('rdp')) return all;
+  const hp = hostPort(String(input || '').trim());
+  return hp ? [target('rdp', hp, false)] : [];
 }
 
 /** The URL a web connection opens. Built from validated fields, never from free text. */

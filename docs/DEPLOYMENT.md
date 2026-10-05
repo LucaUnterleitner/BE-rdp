@@ -57,7 +57,7 @@ Deploy `%ProgramData%\BearingPoint\RdpClient\policy.json` as a separate Win32 ap
 | `signingThumbprint` | SHA-256 thumbprint for `rdpsign.exe`. With the GPO "Specify SHA1 thumbprints of certificates representing trusted .rdp publishers", Windows no longer shows the security confirmation from April 2026. |
 | `requireCredentialProtection` | `remoteGuard` or `restrictedAdmin` for every connection. |
 | `redirect` | Locks device options: `clipboard`, `printers`, `microphone`, `smartcards` (true/false), `drives` (`none`/`all`), `audio` (`local`/`remote`/`none`). |
-| `allowedProtocols` | Connection types users may create and start: any of `rdp`, `ssh`, `web`. All three when not set. |
+| `allowedProtocols` | Connection types users may create and start: any of `rdp`, `ssh`, `web`. All enabled types when not set. SSH and web are currently switched off in the app itself (`ENABLED_PROTOCOLS`). |
 | `ssh.strictHostKeyChecking` | `ask` (default: ssh asks on first contact), `accept-new` (accept new host keys, refuse changed ones) or `yes` (only known hosts). |
 | `notice` | Notice on the dashboard. |
 | `centralList` | Central read-only system list: `url` (https, Windows Integrated Authentication) or `path` (file/UNC), plus `publicKey` (Ed25519, SPKI DER, base64). Optional `maxAgeHours` (default 72). |

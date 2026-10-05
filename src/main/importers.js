@@ -4,6 +4,7 @@
 // local drive redirection is imported as off, and server identity checks are never weakened.
 
 const { XMLParser } = require('fast-xml-parser');
+const { ENABLED_PROTOCOLS } = require('../renderer/js/targets.js');
 
 const MAX_XML_BYTES = 5 * 1024 * 1024;
 
@@ -124,7 +125,8 @@ function rdgServer(server, path, b, fileWarnings) {
 const MR_INHERITABLE = ['Username', 'Domain', 'Port', 'RDGatewayUsageMethod', 'RDGatewayHostname', 'Resolution',
   'RedirectClipboard', 'RedirectPrinters', 'RedirectSound', 'RedirectSmartCards', 'UseConsoleSession', 'RDPAuthenticationLevel'];
 
-function parseMremote(text) {
+/** protocols: connection types to import; others are counted as skipped. */
+function parseMremote(text, { protocols = ENABLED_PROTOCOLS } = {}) {
   const doc = parseXml(text, ['Node']);
   const root = doc.Connections;
   if (!root) throw new Error('This is not an mRemoteNG connection file (confCons.xml).');
@@ -154,11 +156,11 @@ function parseMremote(text) {
       if (proto === 'RDP') {
         if (str(node['@_RedirectDiskDrives']).toLowerCase() === 'true') warnings.push('The file requested local drive access. It is imported as switched off.');
         results.push({ connection: mremoteConnection(node, values, path), warnings });
-      } else if (proto === 'SSH2' || proto === 'SSH1') {
+      } else if ((proto === 'SSH2' || proto === 'SSH1') && protocols.includes('ssh')) {
         if (proto === 'SSH1') warnings.push('SSH version 1 is outdated and insecure. The connection uses SSH version 2.');
         if (str(node['@_PuttySession']) && str(node['@_PuttySession']) !== 'Default Settings') warnings.push('PuTTY session settings are not imported.');
         results.push({ connection: { ...mremoteBase(node, values, path), protocol: 'ssh', username: str(values.Username), port: Number(str(values.Port)) || 22 }, warnings });
-      } else if (proto === 'HTTP' || proto === 'HTTPS') {
+      } else if ((proto === 'HTTP' || proto === 'HTTPS') && protocols.includes('web')) {
         const scheme = proto === 'HTTP' ? 'http' : 'https';
         results.push({ connection: { ...mremoteBase(node, values, path), protocol: 'web', username: '', port: Number(str(values.Port)) || (scheme === 'http' ? 80 : 443), web: { scheme, path: '' } }, warnings });
       } else {
