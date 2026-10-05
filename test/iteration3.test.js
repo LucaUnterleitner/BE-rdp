@@ -68,13 +68,20 @@ const MR = `<?xml version="1.0" encoding="utf-8"?>
 <Connections Name="Connections" EncryptionEngine="AES" BlockCipherMode="GCM" FullFileEncryption="false" ConfVersion="2.6">
   <Node Name="Servers" Type="Container" Username="admin" Domain="CORP" Port="3389">
     <Node Name="App 1" Type="Connection" Protocol="RDP" Hostname="app1.corp.example" Port="3391" Username="" InheritUsername="true" InheritDomain="true" Password="secretblob" Resolution="Res1280x720" RedirectClipboard="true" RedirectDiskDrives="true" RDGatewayUsageMethod="Always" RDGatewayHostname="gw.corp.example" UseConsoleSession="true" RDPAuthenticationLevel="AuthRequired" />
-    <Node Name="Linux" Type="Connection" Protocol="SSH2" Hostname="linux.corp.example" />
+    <Node Name="Linux" Type="Connection" Protocol="SSH2" Hostname="linux.corp.example" Username="root" Password="sshsecret" />
+    <Node Name="iLO" Type="Connection" Protocol="HTTPS" Hostname="ilo01.corp.example" Port="8443" />
+    <Node Name="Lab VNC" Type="Connection" Protocol="VNC" Hostname="vnc.corp.example" />
   </Node>
 </Connections>`;
 
-test('mRemoteNG: maps RDP nodes, resolves inheritance, skips other protocols, drops passwords', () => {
+test('mRemoteNG: maps RDP, SSH and HTTPS nodes, resolves inheritance, skips other protocols, drops passwords', () => {
   const { items, warnings } = parseMremote(MR);
-  assert.strictEqual(items.length, 1);
+  assert.strictEqual(items.length, 3);
+  const ssh = items[1].connection;
+  assert.deepStrictEqual([ssh.protocol, ssh.host, ssh.port, ssh.username], ['ssh', 'linux.corp.example', 22, 'root']);
+  const web = items[2].connection;
+  assert.deepStrictEqual([web.protocol, web.host, web.port, web.web.scheme], ['web', 'ilo01.corp.example', 8443, 'https']);
+  assert.ok(warnings.some((w) => w.includes('VNC: 1')));
   const c = items[0].connection;
   assert.strictEqual(c.host, 'app1.corp.example');
   assert.strictEqual(c.port, 3391);

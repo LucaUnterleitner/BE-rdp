@@ -99,6 +99,7 @@ class SessionManager extends EventEmitter {
 
     const session = {
       id,
+      protocol: 'rdp',
       connectionId: conn.id,
       name: conn.name,
       host: conn.host,
@@ -141,6 +142,52 @@ class SessionManager extends EventEmitter {
     if (was && !on && this.pollTimer) this.schedulePoll(0);
   }
 
+  /**
+   * Start an SSH session in its own console window. There is no event log for SSH, so the session is
+   * "active" while the console program runs; exit code 255 means ssh itself failed (network, host key, sign-in).
+   */
+  startConsole(conn, { exe, commandLine, title }) {
+    const id = crypto.randomUUID();
+    const startedAt = new Date().toISOString();
+    const proc = win32.startConsoleProgram(exe, [], { commandLine, title });
+    const session = {
+      id,
+      protocol: conn.protocol,
+      connectionId: conn.id,
+      name: conn.name,
+      host: conn.host,
+      port: conn.port,
+      username: conn.username || '',
+      gateway: conn.ssh && conn.ssh.jumpHost ? conn.ssh.jumpHost : '',
+      displayMode: 'Terminal window',
+      launchMode: 'console',
+      signed: false,
+      state: 'active',
+      startedAt,
+      connectedAt: startedAt,
+      endedAt: null,
+      pid: proc.pid,
+      result: null,
+      verified: false,
+      lastChange: Date.now(),
+    };
+    this.sessions.set(id, session);
+    this.children.set(id, { kill: () => killTree(proc.pid) });
+    this.emit('update', publicView(session));
+    proc.exited.then((code) => {
+      this.children.delete(id);
+      const endedAt = new Date().toISOString();
+      if (session.userDisconnect) {
+        this.update(session, { state: 'ended', endedAt, result: { kind: 'normal', title: 'Terminal closed', message: 'You closed the SSH session from the app.' } });
+      } else if (code === 255) {
+        this.update(session, { state: 'failed', endedAt, result: { kind: 'error', code: 255, title: 'SSH connection failed', message: 'ssh could not connect or sign in. The terminal window shows the reason, for example an unknown host, a changed host key or a wrong password.' } });
+      } else {
+        this.update(session, { state: 'ended', endedAt, result: { kind: 'normal', title: 'Session closed', message: 'The SSH session ended.' } });
+      }
+    });
+    return publicView(session);
+  }
+
   schedulePoll(ms) {
     if (this.pollTimer) clearTimeout(this.pollTimer);
     this.pollTimer = setTimeout(() => this.poll(), ms);
@@ -149,7 +196,7 @@ class SessionManager extends EventEmitter {
   /** Shared event log poller for all live sessions. */
   async poll() {
     this.pollTimer = null;
-    const live = [...this.sessions.values()].filter((s) => this.children.has(s.id) && ['connecting', 'active', 'reconnecting'].includes(s.state));
+    const live = [...this.sessions.values()].filter((s) => s.protocol === 'rdp' && this.children.has(s.id) && ['connecting', 'active', 'reconnecting'].includes(s.state));
     if (!live.length) return;
     if (this.polling) { this.schedulePoll(FAST_POLL_MS); return; }
     this.polling = true;
@@ -163,8 +210,8 @@ class SessionManager extends EventEmitter {
       /* keep polling */
     } finally {
       this.polling = false;
-      const stillFast = [...this.sessions.values()].some((s) => this.children.has(s.id) && ['connecting', 'reconnecting'].includes(s.state));
-      const anyLive = [...this.sessions.values()].some((s) => this.children.has(s.id) && isLive(s.state));
+      const stillFast = [...this.sessions.values()].some((s) => s.protocol === 'rdp' && this.children.has(s.id) && ['connecting', 'reconnecting'].includes(s.state));
+      const anyLive = [...this.sessions.values()].some((s) => s.protocol === 'rdp' && this.children.has(s.id) && isLive(s.state));
       if (anyLive) this.schedulePoll(stillFast ? FAST_POLL_MS : this.background ? BACKGROUND_POLL_MS : SLOW_POLL_MS);
     }
   }
@@ -258,7 +305,8 @@ class SessionManager extends EventEmitter {
   focus(id) {
     const session = this.sessions.get(id);
     if (!session || !session.pid || !this.children.has(id)) throw new Error('This session is no longer open.');
-    this.focusWindow(session.pid);
+    if (session.protocol === 'ssh') win32.focusConsoleOf(session.pid);
+    else this.focusWindow(session.pid);
   }
 
   /** Close the local client window. The server keeps the user's session running (disconnected). */
@@ -333,6 +381,12 @@ function signFile(file, thumbprint) {
       else resolve();
     });
   });
+}
+
+/** Ends a console session including ssh.exe, which runs as a child of cmd.exe. */
+function killTree(pid) {
+  execFile(path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'taskkill.exe'), ['/T', '/F', '/PID', String(pid)], { windowsHide: true }, () => {});
+  return true;
 }
 
 function cleanup(file) {

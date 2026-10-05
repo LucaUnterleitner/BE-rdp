@@ -15,6 +15,8 @@ const { probe, probeMany } = require('./probe');
 const { applyPolicy, buildRdp, encodeRdp, decodeRdp, rdpToConnection, parseAddress } = require('./rdpfile');
 const { explainProbe, allReasons } = require('./errors');
 const win32 = require('./win32');
+const launchers = require('./launchers');
+const { parseTargets, PROTOCOL_LABELS } = require('../renderer/js/targets.js');
 
 const APP_ID = 'com.bearingpoint.remotedesktop';
 // Development only: a separate data folder (and therefore a separate single-instance lock) for test runs.
@@ -340,8 +342,17 @@ async function refreshStatus(ids) {
 
 /** Probe the gateway (443) when the connection always uses one, otherwise the host. */
 function probeTarget(c) {
-  if (c.gateway && c.gateway.mode === 'always' && c.gateway.host) return { id: c.id, host: c.gateway.host, port: 443, viaGateway: true };
+  if ((c.protocol || 'rdp') === 'rdp' && c.gateway && c.gateway.mode === 'always' && c.gateway.host) return { id: c.id, host: c.gateway.host, port: 443, viaGateway: true };
   return { id: c.id, host: c.host, port: c.port || 3389 };
+}
+
+/** Connection types IT allows on this computer (all when the policy does not say). */
+function protocolAllowed(protocol) {
+  return !policy.allowedProtocols || policy.allowedProtocols.includes(protocol || 'rdp');
+}
+
+function assertProtocolAllowed(protocol) {
+  if (!protocolAllowed(protocol)) throw new Error(`${PROTOCOL_LABELS[protocol] || protocol} connections are switched off by IT policy.`);
 }
 
 function scheduleStatus() {
@@ -407,6 +418,7 @@ function registerIpc() {
       launch: effectiveLaunch(settings),
       central: central ? central.info : { configured: false, state: 'off' },
       packaged: app.isPackaged,
+      sshAvailable: launchers.sshAvailable(),
     };
   }, { open: true });
   handle('app:ready', () => {
@@ -433,6 +445,7 @@ function registerIpc() {
   handle('connections:save', (input) => {
     if (input && input.id) assertPersonal(input.id);
     const isNew = !input.id;
+    assertProtocolAllowed(input && input.protocol);
     const saved = store.saveConnection(input);
     store.audit(isNew ? 'system_added' : 'system_updated', { connectionId: saved.id, name: saved.name, host: saved.host });
     refreshStatus([saved.id]).catch(() => {});
@@ -514,6 +527,7 @@ function registerIpc() {
   });
   handle('connections:export', async (id) => {
     const c = connectionOrThrow(id);
+    if ((c.protocol || 'rdp') !== 'rdp') throw new Error('Only Remote Desktop systems can be exported as .rdp files.');
     const res = await dialog.showSaveDialog(win, {
       title: 'Export Remote Desktop file',
       defaultPath: `${c.name.replace(/[^\w\- ]+/g, '_')}.rdp`,
@@ -565,19 +579,23 @@ function registerIpc() {
   handle('sessions:clearEnded', () => { sessions.clearEnded(); return sessions.list(); });
   handle('sessions:connect', (id, options) => connect(id, options || {}));
   /** Quick connect: host name or IP (optionally :port) without creating a system first. */
-  handle('sessions:quickTarget', ({ address, save } = {}) => {
-    const { host, port } = parseAddress(String(address || '').trim());
-    if (!host) throw new Error('Enter a computer name or IP address.');
+  handle('sessions:quickTarget', ({ address, protocol, save } = {}) => {
+    const candidates = parseTargets(String(address || ''));
+    const t = candidates.find((c) => c.protocol === protocol) || candidates[0];
+    if (!t) throw new Error('Enter a computer name or IP address.');
+    assertProtocolAllowed(t.protocol);
+    const { host, port, username } = t;
+    const fields = { name: host, protocol: t.protocol, host, port, username, web: { scheme: t.scheme, path: t.path } };
     const defaults = store.getSettings().defaults;
     if (save) {
-      const existing = store.listConnections().find((c) => c.host.toLowerCase() === host.toLowerCase() && c.port === port);
+      const existing = store.listConnections().find((c) => (c.protocol || 'rdp') === t.protocol && c.host.toLowerCase() === host.toLowerCase() && c.port === port);
       if (existing) return withStatus(existing);
-      const saved = store.saveConnection({ name: host, host, port });
+      const saved = store.saveConnection(fields);
       store.audit('system_added', { connectionId: saved.id, name: saved.name, host: saved.host, via: 'quick connect' });
       updateJumpList();
       return withStatus(saved);
     }
-    const conn = { ...normalizeConnection({ name: host, host, port }, defaults), adhoc: true };
+    const conn = { ...normalizeConnection(fields, defaults), adhoc: true };
     adhoc.set(conn.id, conn);
     return withStatus(conn);
   });
@@ -610,7 +628,9 @@ async function connectSteps(id, base, force, overrides, quick) {
   const safe = {};
   for (const k of OVERRIDE_KEYS) if (overrides && Object.prototype.hasOwnProperty.call(overrides, k)) safe[k] = overrides[k];
   const merged = normalizeConnection({ ...base, ...safe, id: base.id, host: base.host, port: base.port }, store.getSettings().defaults);
-  const conn = applyPolicy(merged, policy);
+  assertProtocolAllowed(merged.protocol);
+  if (merged.protocol === 'web') return openWeb(id, merged);
+  const conn = merged.protocol === 'rdp' ? applyPolicy(merged, policy) : merged;
   conn.promptAlways = Boolean(overrides && overrides.promptAlways);
 
   // 1. Availability
@@ -630,6 +650,7 @@ async function connectSteps(id, base, force, overrides, quick) {
     return { outcome: 'unreachable', ...info, technical: `${target.host}:${target.port} – ${result.detail || result.reason}` };
   }
   progress('check', result.reachable ? 'done' : 'skipped');
+  if (conn.protocol === 'ssh') return startSsh(id, conn, progress);
 
   // 2. Settings
   progress('validate', 'running');
@@ -662,6 +683,46 @@ async function connectSteps(id, base, force, overrides, quick) {
   progress('start', 'done');
   updateJumpList();
   return { outcome: 'started', session, credentialSaved: credential.saved && !conn.promptAlways, launchNote: launch.note };
+}
+
+/** Web connections open in the default browser. There is no session to track. */
+async function openWeb(id, conn) {
+  const url = launchers.webTarget(conn);
+  await shell.openExternal(url);
+  const openedAt = new Date().toISOString();
+  touchConnection(id, openedAt);
+  store.audit('web_opened', { connectionId: id, name: conn.name, url });
+  updateJumpList();
+  return { outcome: 'opened', url };
+}
+
+/** SSH: the Windows OpenSSH client in its own console window. ssh asks for passwords and host keys itself. */
+function startSsh(id, conn, progress) {
+  progress('validate', 'running');
+  if (!launchers.sshAvailable()) {
+    progress('validate', 'failed');
+    return {
+      outcome: 'unreachable', title: 'The SSH client is not installed',
+      message: 'Windows needs the optional feature "OpenSSH Client". Install it under Settings > System > Optional features, or ask your IT service desk.',
+      technical: `${launchers.SSH_EXE} not found`,
+    };
+  }
+  const { exe, commandLine } = launchers.sshCommandLine(conn, policy);
+  progress('validate', 'done');
+  progress('secure', 'done', 'terminal');
+  progress('start', 'running');
+  let session;
+  try {
+    session = sessions.startConsole(conn, { exe, commandLine, title: `${conn.name} (SSH)` });
+  } catch (err) {
+    progress('start', 'failed');
+    throw err;
+  }
+  touchConnection(id, session.startedAt);
+  store.audit('connect_started', { sessionId: session.id, connectionId: id, protocol: 'ssh', name: conn.name, host: conn.host, port: conn.port, jumpHost: conn.ssh.jumpHost || undefined, keyFile: Boolean(conn.ssh.identityFile) });
+  progress('start', 'done');
+  updateJumpList();
+  return { outcome: 'started', session, credentialSaved: false };
 }
 
 function onSessionUpdate(s) {

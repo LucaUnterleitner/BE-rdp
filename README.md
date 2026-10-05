@@ -1,12 +1,13 @@
 # BearingPoint Remote Desktop
 
-An internal Windows app for managing remote systems and connecting to them over RDP. Connections run through the built-in Windows Remote Desktop client (`mstsc.exe`).
+An internal Windows app for managing remote systems and connecting to them. It uses the clients built into Windows: Remote Desktop (`mstsc.exe`) for RDP, the OpenSSH client (`ssh.exe`) for SSH, and the default browser for web admin pages.
 
 ## Features
 
+- Three connection types: Remote Desktop (RDP), SSH and Web.
 - Save systems, mark favorites, search and filter.
-- Quick connect (Ctrl+K): enter a host name or IP address and connect without saving the system.
-- Import `.rdp`, RDCMan and mRemoteNG files.
+- Quick connect (Ctrl+K): enter an address such as `server01`, `ssh admin@linux01` or `https://ilo01` and connect without saving the system.
+- Import `.rdp`, RDCMan and mRemoteNG files (RDP, SSH and HTTP/HTTPS entries).
 - Shows running sessions and recent connections.
 - Passwords are stored only in Windows Credential Manager.
 - IT can configure the app through a policy file (see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)).

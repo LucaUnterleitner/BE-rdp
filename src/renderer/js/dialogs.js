@@ -2,6 +2,7 @@
 
 import { icon } from './icons.js';
 import { esc, $, $$, call, openDialog, confirmDialog, toast, errorDialog } from './ui.js';
+import { PROTOCOLS, parseTargets, defaultPort, describeTarget } from './targets.js';
 
 let ctx = null;
 export function setContext(c) { ctx = c; }
@@ -141,6 +142,8 @@ function showFormError(form, message) {
 export async function openConnectDialog(conn, { forceDialog = false } = {}) {
   const running = ctx.state.sessions.find((s) => s.connectionId === conn.id && ['connecting', 'active', 'reconnecting'].includes(s.state));
   if (running) return alreadyConnected(conn, running);
+  // SSH asks for sign-in in its terminal and web pages in the browser: nothing to set here.
+  if ((conn.protocol || 'rdp') !== 'rdp') return runConnect(conn, null);
   if (!forceDialog && ctx.state.settings && ctx.state.settings.showConnectDialog === false) return runConnect(conn, null);
 
   const userId = uid('user');
@@ -208,7 +211,7 @@ function alreadyConnected(conn, session) {
 }
 
 // ── Connection progress ───────────────────────────────
-const STEPS = [
+const RDP_STEPS = [
   ['check', 'Checking system availability'],
   ['validate', 'Validating connection settings'],
   ['secure', 'Preparing secure sign-in'],
@@ -216,7 +219,29 @@ const STEPS = [
   ['session', 'Waiting for the remote session'],
 ];
 
+const SSH_STEPS = [
+  ['check', 'Checking system availability'],
+  ['validate', 'Checking the SSH client and settings'],
+  ['start', 'Opening the terminal window'],
+];
+
+/** Web systems open in the default browser; there is no session to follow. */
+async function openWeb(conn) {
+  try {
+    const res = await call(window.rdp.sessions.connect(conn.id, {}));
+    if (res.outcome === 'opened') {
+      toast(`${conn.name} opened in your browser`);
+      await ctx.reload();
+    }
+  } catch (err) {
+    errorDialog(`${conn.name} could not be opened`, err.message);
+  }
+}
+
 export async function runConnect(conn, overrides, { force = false, quick = false } = {}) {
+  const protocol = conn.protocol || 'rdp';
+  if (protocol === 'web') return openWeb(conn);
+  const STEPS = protocol === 'ssh' ? SSH_STEPS : RDP_STEPS;
   const stepState = Object.fromEntries(STEPS.map(([k]) => [k, 'pending']));
   let sessionId = null;
   let slowTimer = null;
@@ -251,7 +276,7 @@ export async function runConnect(conn, overrides, { force = false, quick = false
   const footer = (html) => { $('.dialog__footer', dlg.el).innerHTML = html; };
 
   const unsubscribe = window.rdp.on('connect:progress', (p) => {
-    if (p.connectionId !== conn.id || finished) return;
+    if (p.connectionId !== conn.id || finished || !(p.step in stepState)) return;
     stepState[p.step] = p.state;
     render();
   });
@@ -270,12 +295,12 @@ export async function runConnect(conn, overrides, { force = false, quick = false
       return;
     }
     if (s.state === 'active') {
-      stepState.session = 'done'; render();
+      if ('session' in stepState) { stepState.session = 'done'; render(); }
       clearTimeout(slowTimer);
-      toast(`Connected to ${conn.name}`);
+      toast(protocol === 'ssh' ? `Terminal for ${conn.name} opened` : `Connected to ${conn.name}`);
       dlg.close();
     } else if (s.state === 'failed' || s.state === 'ended') {
-      stepState.session = s.state === 'failed' ? 'failed' : 'skipped'; render();
+      if ('session' in stepState) { stepState.session = s.state === 'failed' ? 'failed' : 'skipped'; render(); }
       clearTimeout(slowTimer);
       showResult(s.result, s);
     }
@@ -324,7 +349,7 @@ export async function runConnect(conn, overrides, { force = false, quick = false
     note(`<div class="alert alert--error" role="alert">${icon('xCircle')}<div class="alert__body">
       <p class="alert__title">${esc(res.title)}</p><p class="alert__msg">${esc(res.message)}</p>
       <details class="details"><summary>Technical details</summary><p class="mono small">${esc(res.technical)}</p></details>
-      <p class="small muted" style="margin-top:8px">Trying again is safe. "Connect anyway" starts Remote Desktop without the availability check, for example when only the gateway can reach the system.</p>
+      <p class="small muted" style="margin-top:8px">Trying again is safe. "Connect anyway" starts the connection without the availability check, for example when only ${protocol === 'ssh' ? 'a jump host' : 'the gateway'} can reach the system.</p>
     </div></div>`);
     footer(`<button class="btn btn--secondary" type="button" data-close-final>Close</button>
             <button class="btn btn--secondary" type="button" data-force>Connect anyway</button>
@@ -340,6 +365,11 @@ export async function runConnect(conn, overrides, { force = false, quick = false
   sessionId = res.session.id;
   const newer = earlyUpdates.get(sessionId) || ctx.state.sessions.find((x) => x.id === sessionId);
   if (!newer) ctx.upsertSession(res.session);
+  if (protocol === 'ssh') {
+    // ssh runs as soon as the terminal opens; sign-in happens there.
+    onSession(newer || res.session);
+    return;
+  }
   stepState.session = 'running'; render();
   const launchNote = res.session.launchMode === 'file' && !res.session.signed
     ? 'Windows shows a security confirmation for the connection. Check the computer name and the listed permissions, then select Connect.'
@@ -364,38 +394,75 @@ export async function runConnect(conn, overrides, { force = false, quick = false
 }
 
 // ── Add / edit system ─────────────────────────────────
+const TYPE_TEXT = {
+  rdp: { label: 'Remote Desktop', icon: 'monitor', host: 'Computer name or IP address', hostPh: 'server01.domain.local', userPh: 'DOMAIN\\username' },
+  ssh: { label: 'SSH', icon: 'terminal', host: 'Host name or IP address', hostPh: 'linux01.domain.local', userPh: 'for example admin' },
+  web: { label: 'Web', icon: 'globe', host: 'Host name or IP address', hostPh: 'ilo01.domain.local', userPh: '' },
+};
+
 export function openEditDialog(existing = null) {
   const defaults = ctx.state.settings.defaults;
   const c = existing ? structuredClone(existing) : {
     name: '', host: '', port: 3389, username: '', folder: '', os: '', location: '', tags: [], description: '',
-    credentialMode: 'prompt', favorite: false,
+    credentialMode: 'prompt', favorite: false, protocol: 'rdp',
     ...structuredClone(defaults),
   };
-  const ids = Object.fromEntries(['name', 'host', 'port', 'user', 'folder', 'os', 'loc', 'tags', 'desc'].map((k) => [k, uid(k)]));
+  c.protocol = c.protocol || 'rdp';
+  c.ssh = { identityFile: '', jumpHost: '', ...(c.ssh || {}) };
+  c.web = { scheme: 'https', path: '', ...(c.web || {}) };
+  const allowed = (ctx.state.info.policy || {}).allowedProtocols || PROTOCOLS;
+  const types = PROTOCOLS.filter((p) => allowed.includes(p) || p === c.protocol);
+  const ids = Object.fromEntries(['name', 'host', 'port', 'user', 'folder', 'os', 'loc', 'tags', 'desc', 'key', 'jump', 'scheme', 'path', 'detect', 'preview'].map((k) => [k, uid(k)]));
   const folders = [...new Set(ctx.state.connections.map((x) => x.folder).filter(Boolean))].sort();
   const tabs = [['general', 'General'], ['display', 'Display'], ['redirect', 'Devices and clipboard'], ['advanced', 'Gateway and security']];
+  const T = TYPE_TEXT[c.protocol];
 
   const dlg = openDialog({
     title: existing ? `Edit ${existing.name}` : 'Add system',
     size: 'wide',
     body: `<form id="edit-form" novalidate>
-      <div class="tabs" role="tablist" aria-label="System settings">
+      ${types.length > 1 ? `<fieldset class="segmented" aria-describedby="${ids.detect}"><legend class="field__label">Connection type</legend>
+        <div class="segmented__items">${types.map((p) => `<label class="segmented__item"><input type="radio" name="protocol" value="${p}" ${p === c.protocol ? 'checked' : ''}>${icon(TYPE_TEXT[p].icon, 16)}<span>${TYPE_TEXT[p].label}</span></label>`).join('')}</div>
+      </fieldset>` : `<input type="hidden" name="protocol" value="${esc(c.protocol)}">`}
+      <p class="small muted" id="${ids.detect}" role="status" aria-live="polite" data-detect style="margin:-8px 0 12px"></p>
+      <div class="tabs" role="tablist" aria-label="System settings" data-for="rdp" ${c.protocol === 'rdp' ? '' : 'hidden'}>
         ${tabs.map(([k, l], i) => `<button class="tab" type="button" role="tab" id="tab-${k}" aria-controls="pane-${k}" aria-selected="${i === 0}" tabindex="${i === 0 ? 0 : -1}" data-tab="${k}">${l}</button>`).join('')}
       </div>
       <div role="tabpanel" id="pane-general" aria-labelledby="tab-general" data-pane="general">
         <div class="field-row field-row--host">
-          <div class="field"><label class="field__label" for="${ids.host}">Computer name or IP address (required)</label>
-            <input class="input mono" id="${ids.host}" name="host" value="${esc(c.host)}" required autocomplete="off" spellcheck="false" placeholder="server01.domain.local" autofocus>
+          <div class="field"><label class="field__label" for="${ids.host}"><span data-host-label>${T.host}</span> (required)</label>
+            <input class="input mono" id="${ids.host}" name="host" value="${esc(c.host)}" required autocomplete="off" spellcheck="false" placeholder="${T.hostPh}" autofocus>
+            <span class="field__help">You can also paste an address such as <span class="mono">ssh admin@linux01</span> or <span class="mono">https://ilo01</span>.</span>
             <span class="field__error" data-err="host" hidden></span></div>
           <div class="field"><label class="field__label" for="${ids.port}">Port</label>
-            <input class="input" id="${ids.port}" name="port" type="number" min="1" max="65535" value="${esc(c.port || 3389)}"></div>
+            <input class="input" id="${ids.port}" name="port" type="number" min="1" max="65535" value="${esc(c.port || defaultPort(c.protocol, c.web.scheme))}"></div>
+        </div>
+        <div class="field-row" style="margin-top:16px" data-for="web" ${c.protocol === 'web' ? '' : 'hidden'}>
+          <div class="field"><label class="field__label" for="${ids.scheme}">Protocol</label>
+            ${select('web.scheme', c.web.scheme, [['https', 'HTTPS (recommended)'], ['http', 'HTTP (not encrypted)']], { id: ids.scheme })}</div>
+          <div class="field"><label class="field__label" for="${ids.path}">Path (optional)</label>
+            <input class="input mono" id="${ids.path}" name="web.path" value="${esc(c.web.path)}" placeholder="/admin" autocomplete="off" spellcheck="false"></div>
         </div>
         <div class="field-row" style="margin-top:16px">
           <div class="field"><label class="field__label" for="${ids.name}">Display name</label>
             <input class="input" id="${ids.name}" name="name" value="${esc(c.name)}" placeholder="Finance Test Server"></div>
-          <div class="field"><label class="field__label" for="${ids.user}">Username</label>
-            <input class="input" id="${ids.user}" name="username" value="${esc(c.username)}" placeholder="DOMAIN\\username" autocomplete="off" spellcheck="false"></div>
+          <div class="field" data-for="rdp ssh" ${c.protocol === 'web' ? 'hidden' : ''}><label class="field__label" for="${ids.user}">Username</label>
+            <input class="input" id="${ids.user}" name="username" value="${esc(c.username)}" placeholder="${T.userPh}" autocomplete="off" spellcheck="false"></div>
         </div>
+        <div data-for="ssh" ${c.protocol === 'ssh' ? '' : 'hidden'}>
+          <p class="small muted" style="margin-top:12px">${icon('info', 16)} SSH opens in a terminal window. The password is asked there and never stored by the app.</p>
+          <details class="details form-section" ${c.ssh.identityFile || c.ssh.jumpHost ? 'open' : ''}><summary>SSH options</summary>
+            <div class="field-row" style="margin-top:12px">
+              <div class="field"><label class="field__label" for="${ids.key}">Key file (optional)</label>
+                <input class="input mono" id="${ids.key}" name="ssh.identityFile" value="${esc(c.ssh.identityFile)}" placeholder="C:\\Users\\name\\.ssh\\id_ed25519" autocomplete="off" spellcheck="false">
+                <span class="field__help">Leave empty to use your SSH agent or ~/.ssh/config.</span></div>
+              <div class="field"><label class="field__label" for="${ids.jump}">Jump host (optional)</label>
+                <input class="input mono" id="${ids.jump}" name="ssh.jumpHost" value="${esc(c.ssh.jumpHost)}" placeholder="admin@bastion01:22" autocomplete="off" spellcheck="false">
+                <span class="field__help">Connect through this host first.</span></div>
+            </div>
+          </details>
+        </div>
+        <p class="small preview-line" id="${ids.preview}" data-preview></p>
         <div class="form-section">${check('favorite', c.favorite, 'Show in favorites')}</div>
         <details class="details form-section" ${c.folder || c.os || c.location || (c.tags || []).length || c.description ? 'open' : ''}><summary>Advanced settings</summary>
         <div class="field-row" style="margin-top:12px">
@@ -428,12 +495,57 @@ export function openEditDialog(existing = null) {
   const form = $('#edit-form', dlg.el);
   wireDependentFields(form);
 
+  // Connection type: show only what the type needs; the port follows the type until the user changes it.
+  const f0 = form.elements;
+  const typeOf = () => (form.querySelector('[name="protocol"]:checked') || f0.protocol).value;
+  let portTouched = Boolean(existing) && Number(f0.port.value) !== defaultPort(c.protocol, c.web.scheme);
+  f0.port.addEventListener('input', () => { portTouched = true; });
+  const preview = () => {
+    const p = typeOf();
+    const host = f0.host.value.trim();
+    $('[data-preview]', form).textContent = host ? `Starts: ${describeTarget({ protocol: p, host, port: Number(f0.port.value) || defaultPort(p, f0['web.scheme'].value), username: f0.username.value.trim(), web: { scheme: f0['web.scheme'].value, path: f0['web.path'].value.trim() } })}` : '';
+  };
+  const applyType = (p) => {
+    $$('[data-for]', form).forEach((el) => { el.hidden = !el.dataset.for.split(' ').includes(p); });
+    if (p !== 'rdp') selectTab(tabEls[0], false);
+    const t = TYPE_TEXT[p];
+    $('[data-host-label]', form).textContent = t.host;
+    f0.host.placeholder = t.hostPh;
+    f0.username.placeholder = t.userPh;
+    if (!portTouched) f0.port.value = defaultPort(p, f0['web.scheme'].value);
+    preview();
+  };
+  form.addEventListener('change', (e) => {
+    if (e.target.name === 'protocol') applyType(e.target.value);
+    if (e.target.name === 'web.scheme' && !portTouched) f0.port.value = defaultPort('web', e.target.value);
+  });
+  form.addEventListener('input', preview);
+
+  // Paste or type a full address ("ssh admin@host -p 2222", "https://ilo01/admin"): fill the fields from it.
+  const detect = () => {
+    const raw = f0.host.value.trim();
+    if (!/[@\s]|:\/\/|:\d+$/.test(raw)) return;
+    const t = parseTargets(raw)[0];
+    if (!t || !types.includes(t.protocol)) return;
+    const radio = form.querySelector(`[name="protocol"][value="${t.protocol}"]`);
+    if (radio) radio.checked = true; else f0.protocol.value = t.protocol;
+    f0.host.value = t.host;
+    if (t.username) f0.username.value = t.username;
+    if (t.protocol === 'web') { f0['web.scheme'].value = t.scheme; f0['web.path'].value = t.path; }
+    portTouched = t.port !== defaultPort(t.protocol, t.scheme);
+    f0.port.value = t.port;
+    applyType(t.protocol);
+    $('[data-detect]', form).textContent = `Recognized as ${TYPE_TEXT[t.protocol].label}. The fields were filled in from the address.`;
+  };
+  f0.host.addEventListener('change', detect);
+  f0.host.addEventListener('paste', () => setTimeout(detect, 0));
+
   // Tabs with arrow-key navigation
   const tabEls = $$('[role="tab"]', form);
-  const selectTab = (tab) => {
+  function selectTab(tab, focus = true) {
     tabEls.forEach((t) => { const on = t === tab; t.setAttribute('aria-selected', on); t.tabIndex = on ? 0 : -1; $(`[data-pane="${t.dataset.tab}"]`, form).hidden = !on; });
-    tab.focus();
-  };
+    if (focus) tab.focus();
+  }
   tabEls.forEach((t, i) => {
     t.addEventListener('click', () => selectTab(t));
     t.addEventListener('keydown', (e) => {
@@ -442,9 +554,12 @@ export function openEditDialog(existing = null) {
     });
   });
 
+  preview();
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const f = form.elements;
+    const protocol = typeOf();
     const hostErr = $('[data-err="host"]', form);
     if (!f.host.value.trim()) {
       selectTab(tabEls[0]);
@@ -456,7 +571,7 @@ export function openEditDialog(existing = null) {
       return;
     }
     const opts = readOptions(form, c);
-    if (opts.gateway.mode !== 'none' && !opts.gateway.host) {
+    if (protocol === 'rdp' && opts.gateway.mode !== 'none' && !opts.gateway.host) {
       selectTab(tabEls[3]);
       f['g.host'].setAttribute('aria-invalid', 'true');
       f['g.host'].focus();
@@ -464,10 +579,16 @@ export function openEditDialog(existing = null) {
     }
     const payload = {
       ...c, ...opts,
-      host: f.host.value.trim(), port: Number(f.port.value) || 3389, name: f.name.value.trim(), username: f.username.value.trim(),
+      protocol,
+      host: f.host.value.trim(), port: Number(f.port.value) || defaultPort(protocol, f['web.scheme'].value), name: f.name.value.trim(),
+      username: protocol === 'web' ? '' : f.username.value.trim(),
       folder: f.folder.value.trim(), os: f.os.value.trim(), location: f.location.value.trim(),
       tags: f.tags.value, description: f.description.value.trim(), favorite: f.favorite.checked,
+      ssh: { identityFile: f['ssh.identityFile'].value.trim(), jumpHost: f['ssh.jumpHost'].value.trim() },
+      web: { scheme: f['web.scheme'].value, path: f['web.path'].value.trim() },
     };
+    // Gateway settings only apply to RDP; a hidden gateway must not block saving other types.
+    if (protocol !== 'rdp') payload.gateway = { mode: 'none', host: '' };
     try {
       const saved = await call(window.rdp.connections.save(payload));
       dlg.close();

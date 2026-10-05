@@ -6,6 +6,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const os = require('node:os');
+// Shared with the renderer (an ES module; loaded through require(esm)).
+const { PROTOCOLS, isHost, isSshUser, defaultPort, webUrl } = require('../renderer/js/targets.js');
 
 const DEFAULT_SETTINGS = {
   launchMode: 'file',            // 'file' (all settings, Windows security confirmation) | 'direct' (mstsc /v:, no dialog)
@@ -164,16 +166,30 @@ class Store {
 function normalizeConnection(input, defaults) {
   const d = structuredClone(defaults);
   const c = input || {};
+  const protocol = c.protocol === undefined || c.protocol === null || c.protocol === '' ? 'rdp' : String(c.protocol);
+  if (!PROTOCOLS.includes(protocol)) throw new Error(`The connection type "${protocol.slice(0, 20)}" is not supported by this app version.`);
   const host = String(c.host || '').trim();
   if (!host) throw new Error('Enter a computer name or IP address.');
-  const isV6 = /^[0-9A-Fa-f:.]+$/.test(host) && (host.match(/:/g) || []).length > 1;
-  if (!isV6 && !/^[A-Za-z0-9.\-_]+$/.test(host)) {
-    throw new Error(host.includes(':') ? 'Enter the port in the Port field, not in the computer name.' : 'The computer name contains characters that are not allowed.');
+  if (!isHost(host)) {
+    throw new Error(host.includes(':') && !host.includes('::') ? 'Enter the port in the Port field, not in the computer name.' : 'The computer name contains characters that are not allowed.');
   }
-  const port = Number(c.port) || 3389;
-  if (port < 1 || port > 65535) throw new Error('The port must be between 1 and 65535.');
+  const webIn = c.web || {};
+  const web = { scheme: webIn.scheme === 'http' ? 'http' : 'https', path: String(webIn.path || '').trim() };
+  const port = Number(c.port) || defaultPort(protocol, web.scheme);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('The port must be between 1 and 65535.');
   const username = String(c.username || '').trim().replace(/[\u0000-\u001f\u007f]/g, '');
-  if (username && !/^[^\s"/[\]:;|=,+*?<>]+$/.test(username.replace(/\\/, ''))) throw new Error('The username format is not valid. Use DOMAIN\\username or username@domain.');
+  if (protocol === 'ssh') {
+    if (username && !isSshUser(username)) throw new Error('The username may only contain letters, digits and . _ @ \\ - and must not start with "-".');
+  } else if (username && !/^[^\s"/[\]:;|=,+*?<>]+$/.test(username.replace(/\\/, ''))) {
+    throw new Error('The username format is not valid. Use DOMAIN\\username or username@domain.');
+  }
+  const ssh = normalizeSsh(c.ssh, protocol === 'ssh');
+  if (protocol === 'web') {
+    if (web.path && !/^[/?][\x21-\x7e]*$/.test(web.path)) throw new Error('The path must start with / and must not contain spaces.');
+    let url;
+    try { url = new URL(webUrl({ host, port, web })); } catch { throw new Error('The web address is not valid.'); }
+    if (url.protocol !== `${web.scheme}:` || url.hostname.replace(/^\[|\]$/g, '').toLowerCase() !== host.toLowerCase()) throw new Error('The web address is not valid.');
+  }
   const gateway = { ...d.gateway, ...(c.gateway || {}) };
   if (gateway.mode !== 'none' && !String(gateway.host || '').trim()) throw new Error('Enter an RD Gateway address or switch the gateway off.');
   if (gateway.mode !== 'none' && !HOST_PATTERN.test(String(gateway.host).trim())) throw new Error('The RD Gateway address contains characters that are not allowed.');
@@ -181,6 +197,7 @@ function normalizeConnection(input, defaults) {
   return {
     id: ID_PATTERN.test(String(c.id || '')) ? String(c.id).toLowerCase() : crypto.randomUUID(),
     name: String(c.name || host).trim().slice(0, 120),
+    protocol,
     host,
     port,
     username,
@@ -193,6 +210,8 @@ function normalizeConnection(input, defaults) {
     favorite: Boolean(c.favorite),
     sample: Boolean(c.sample),
     credentialMode: c.credentialMode === 'saved' ? 'saved' : 'prompt',
+    ssh,
+    web,
     display: { ...d.display, ...(c.display || {}) },
     redirect: { ...d.redirect, ...(c.redirect || {}) },
     gateway: { mode: ['none', 'always', 'detect'].includes(gateway.mode) ? gateway.mode : 'none', host: String(gateway.host || '').trim() },
@@ -204,6 +223,30 @@ function normalizeConnection(input, defaults) {
     },
     lastConnectedAt: typeof c.lastConnectedAt === 'string' && !Number.isNaN(Date.parse(c.lastConnectedAt)) ? c.lastConnectedAt : null,
   };
+}
+
+/**
+ * SSH options. Everything here ends up on the ssh.exe command line, so only strict values pass:
+ * a key file as an absolute path without shell characters, and a jump host as [user@]host[:port].
+ */
+function normalizeSsh(input, check) {
+  const s = input || {};
+  const identityFile = String(s.identityFile || '').trim();
+  const jumpHost = String(s.jumpHost || '').trim();
+  if (check && identityFile && (!/^[A-Za-z]:\\[^"%&|<>^!()\u0000-\u001f]+$/.test(identityFile) || identityFile.length > 260)) {
+    throw new Error('The key file must be a full path such as C:\\Users\\name\\.ssh\\id_ed25519, without the characters " % & | < > ^ ! ( ).');
+  }
+  if (check && jumpHost) {
+    const at = jumpHost.lastIndexOf('@');
+    const user = at > 0 ? jumpHost.slice(0, at) : '';
+    const m = /^(\[[0-9A-Fa-f:.]+\]|[^:]+)(?::(\d{1,5}))?$/.exec(at > 0 ? jumpHost.slice(at + 1) : jumpHost);
+    const host = m ? m[1].replace(/^\[|\]$/g, '') : '';
+    const port = m && m[2] ? Number(m[2]) : 22;
+    if (!m || !isHost(host) || (user && !isSshUser(user)) || port < 1 || port > 65535) {
+      throw new Error('Enter the jump host as host, host:port or user@host:port.');
+    }
+  }
+  return { identityFile: identityFile.slice(0, 260), jumpHost: jumpHost.slice(0, 300) };
 }
 
 function pick(obj, keys) {
@@ -243,6 +286,10 @@ function readPolicy() {
   if (['file', 'direct'].includes(raw.launchMode)) p.launchMode = raw.launchMode;
   if (['remoteGuard', 'restrictedAdmin'].includes(raw.requireCredentialProtection)) p.requireCredentialProtection = raw.requireCredentialProtection;
   if (str(raw.signingThumbprint, 128)) p.signingThumbprint = raw.signingThumbprint.replace(/[^0-9a-fA-F]/g, '').toUpperCase();
+  if (Array.isArray(raw.allowedProtocols)) p.allowedProtocols = PROTOCOLS.filter((x) => raw.allowedProtocols.includes(x));
+  if (raw.ssh && typeof raw.ssh === 'object' && ['ask', 'accept-new', 'yes'].includes(raw.ssh.strictHostKeyChecking)) {
+    p.ssh = { strictHostKeyChecking: raw.ssh.strictHostKeyChecking };
+  }
   if (Array.isArray(raw.allowedGroups)) p.allowedGroups = raw.allowedGroups.filter((g) => typeof g === 'string').slice(0, 50);
   if (raw.notice && typeof raw.notice === 'object') p.notice = { title: str(raw.notice.title, 120) || 'Notice from IT', message: str(raw.notice.message) || '' };
   if (str(raw.helpUrl, 300) && /^https:\/\//.test(raw.helpUrl)) p.helpUrl = raw.helpUrl;

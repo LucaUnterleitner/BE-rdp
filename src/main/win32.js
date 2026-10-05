@@ -212,7 +212,78 @@ function isOwnedByAdministrators(file) {
   }
 }
 
+// ── Console programs (ssh.exe) ───────────────────────
+// Started with CreateProcessW and CREATE_NEW_CONSOLE, so the program gets a real interactive console
+// (Windows Terminal takes it over where it is the default terminal). No shell parses the command line.
+const CREATE_NEW_CONSOLE = 0x10;
+const CREATE_UNICODE_ENVIRONMENT = 0x400;
+const STARTF_USESHOWWINDOW = 0x1;
+const SW_SHOWNORMAL = 1;
+const INFINITE = 0xFFFFFFFF;
+const STARTUPINFOW = koffi.struct('BP_STARTUPINFOW', {
+  cb: 'uint32', lpReserved: 'void *', lpDesktop: 'void *', lpTitle: 'str16',
+  dwX: 'uint32', dwY: 'uint32', dwXSize: 'uint32', dwYSize: 'uint32', dwXCountChars: 'uint32', dwYCountChars: 'uint32', dwFillAttribute: 'uint32',
+  dwFlags: 'uint32', wShowWindow: 'uint16', cbReserved2: 'uint16', lpReserved2: 'void *',
+  hStdInput: 'void *', hStdOutput: 'void *', hStdError: 'void *',
+});
+const PROCESS_INFORMATION = koffi.struct('BP_PROCESS_INFORMATION', { hProcess: 'void *', hThread: 'void *', dwProcessId: 'uint32', dwThreadId: 'uint32' });
+const CreateProcessW = kernel32.func('bool __stdcall CreateProcessW(str16 app, str16 cmdLine, void *pa, void *ta, bool inherit, uint32 flags, void *env, str16 cwd, BP_STARTUPINFOW *si, _Out_ BP_PROCESS_INFORMATION *pi)');
+const WaitForSingleObject = kernel32.func('uint32 __stdcall WaitForSingleObject(void *h, uint32 ms)');
+const GetExitCodeProcess = kernel32.func('bool __stdcall GetExitCodeProcess(void *h, _Out_ uint32 *code)');
+const TerminateProcess = kernel32.func('bool __stdcall TerminateProcess(void *h, uint32 code)');
+const CloseHandle = kernel32.func('bool __stdcall CloseHandle(void *h)');
+const AttachConsole = kernel32.func('bool __stdcall AttachConsole(uint32 pid)');
+const FreeConsole = kernel32.func('bool __stdcall FreeConsole()');
+const GetConsoleWindow = kernel32.func('void * __stdcall GetConsoleWindow()');
+
+/** Quotes one argument by the CommandLineToArgvW rules. */
+function quoteArg(arg) {
+  const a = String(arg);
+  if (a && !/[\s"]/.test(a)) return a;
+  return `"${a.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\+)$/, '$1$1')}"`;
+}
+
+/**
+ * Starts a console program in its own console window. Returns the process id, a promise for the exit
+ * code (resolved on a worker thread, the main thread is not blocked) and a function to end the process.
+ */
+function startConsoleProgram(exe, args, { title = '', commandLine = null } = {}) {
+  const si = { cb: koffi.sizeof(STARTUPINFOW), lpTitle: title || null, dwFlags: STARTF_USESHOWWINDOW, wShowWindow: SW_SHOWNORMAL };
+  const pi = {};
+  // commandLine: a complete, already quoted line for programs with their own parsing rules (cmd.exe).
+  const cmdLine = commandLine || [exe, ...args].map(quoteArg).join(' ');
+  if (!CreateProcessW(exe, cmdLine, null, null, false, CREATE_NEW_CONSOLE | CREATE_UNICODE_ENVIRONMENT, null, null, si, pi)) {
+    throw new Error(`The program could not be started (error ${GetLastError()}).`);
+  }
+  CloseHandle(pi.hThread);
+  const handle = pi.hProcess;
+  let closed = false;
+  const exited = new Promise((resolve) => {
+    WaitForSingleObject.async(handle, INFINITE, () => {
+      const code = [0];
+      GetExitCodeProcess(handle, code);
+      closed = true;
+      CloseHandle(handle);
+      resolve(code[0]);
+    });
+  });
+  return { pid: pi.dwProcessId, exited, kill: () => (closed ? false : TerminateProcess(handle, 1)) };
+}
+
+/** Brings the console window of a console program (conhost or Windows Terminal) to the foreground. */
+function focusConsoleOf(pid) {
+  let hwnd = null;
+  if (AttachConsole(pid)) {
+    try { hwnd = GetConsoleWindow(); } finally { FreeConsole(); }
+  }
+  if (hwnd) {
+    if (IsIconic(hwnd)) ShowWindow(hwnd, SW_RESTORE);
+    if (SetForegroundWindow(hwnd)) return true;
+  }
+  throw new Error('The terminal window could not be brought to the front. Switch to it with Alt+Tab.');
+}
+
 module.exports = {
   getCredential, saveCredential, deleteCredential, focusProcessWindow, windowsOfProcess,
-  queryRdpEvents, parseEventXml, isOwnedByAdministrators,
+  queryRdpEvents, parseEventXml, isOwnedByAdministrators, startConsoleProgram, focusConsoleOf, quoteArg,
 };

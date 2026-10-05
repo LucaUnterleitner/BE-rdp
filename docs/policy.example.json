@@ -5,6 +5,10 @@
   "serviceDeskName": "the BearingPoint IT Service Desk",
   "helpUrl": "https://servicedesk.example.com/remote-desktop",
   "allowSavedCredentials": true,
+  "allowedProtocols": ["rdp", "ssh", "web"],
+  "ssh": {
+    "strictHostKeyChecking": "ask"
+  },
   "launchMode": "file",
   "signingThumbprint": "",
   "requireCredentialProtection": "remoteGuard",

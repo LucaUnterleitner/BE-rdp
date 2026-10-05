@@ -8,6 +8,7 @@ import {
 import {
   setContext, openConnectDialog, runConnect, openEditDialog, importRdpFiles, openCredentialDialog, removeCredential,
 } from './dialogs.js';
+import { PROTOCOL_LABELS, parseTargets, describeTarget, defaultPort } from './targets.js';
 
 const state = {
   info: null,
@@ -18,7 +19,7 @@ const state = {
   loaded: false,
   loadError: null,
   route: { name: 'dashboard', id: null },
-  filters: { q: '', status: '', os: '', favorites: false, recent: false },
+  filters: { q: '', protocol: '', status: '', os: '', favorites: false, recent: false },
   view: readPref('view', 'grid'),
   filtersOpen: readPref('filters', 'closed') === 'open',
   notifications: [],
@@ -96,7 +97,7 @@ function activeSessions() {
 function statusOf(c) {
   if (c.activeSessionId && c.activeState === 'connecting') return { key: 'busy', label: 'Connecting…', dot: true };
   if (c.activeSessionId && c.activeState === 'reconnecting') return { key: 'busy', label: 'Reconnecting…', icon: 'refresh' };
-  if (c.activeSessionId) return { key: 'busy', label: 'Busy · your session', dot: true };
+  if (c.activeSessionId) return { key: 'busy', label: protoOf(c) === 'ssh' ? 'Terminal open' : 'Busy · your session', dot: true };
   const s = c.status;
   if (!s) return { key: 'checking', label: 'Checking…', icon: 'question' };
   if (s.reachable) return { key: 'available', label: 'Available', dot: true, latency: s.latencyMs };
@@ -105,11 +106,40 @@ function statusOf(c) {
 }
 
 const OFFLINE_REASON = { dns: 'Name not found', refused: 'Remote Desktop not enabled', timeout: 'No response', unreachable: 'Network unreachable' };
+const REFUSED_BY_TYPE = { rdp: 'Remote Desktop not enabled', ssh: 'SSH server not running', web: 'Web server not responding' };
+
+/** Connection type of a system; older records without a type are RDP. */
+function protoOf(c) { return (c && c.protocol) || 'rdp'; }
+
+function protocolsInUse() {
+  return ['rdp', 'ssh', 'web'].filter((p) => state.connections.some((c) => protoOf(c) === p));
+}
+
+const PROTOCOL_ICONS = { rdp: 'monitor', ssh: 'terminal', web: 'globe' };
+
+/** Type badge: icon plus text, never color alone. */
+function protocolBadge(c) {
+  const p = protoOf(c);
+  return `<span class="badge badge--proto badge--proto-${p}">${icon(PROTOCOL_ICONS[p], 16)}${PROTOCOL_LABELS[p]}</span>`;
+}
+
+/** Address as shown on cards: the port only when it is not the default for the type. */
+function addressOf(c) {
+  const p = protoOf(c);
+  const scheme = c.web && c.web.scheme;
+  const port = c.port && c.port !== defaultPort(p, scheme) ? `:${c.port}` : '';
+  if (p === 'web') return `${scheme === 'http' ? 'http' : 'https'}://${c.host}${port}${(c.web && c.web.path) || ''}`;
+  return `${c.username && p === 'ssh' ? `${c.username}@` : ''}${c.host}${port}`;
+}
+
+/** Label of the main action button. */
+function connectLabel(c) { return protoOf(c) === 'web' ? 'Open' : 'Connect'; }
+function connectIcon(c) { return protoOf(c) === 'web' ? 'external' : 'arrowRight'; }
 
 function statusBadge(c, { withLatency = false } = {}) {
   const s = statusOf(c);
   const visual = s.dot ? '<span class="status__dot" aria-hidden="true"></span>' : icon(s.icon, 16);
-  const title = s.reason ? OFFLINE_REASON[s.reason] || '' : '';
+  const title = s.reason ? (s.reason === 'refused' ? REFUSED_BY_TYPE[protoOf(c)] : OFFLINE_REASON[s.reason]) || '' : '';
   return `<span class="status status--${s.key}" ${title ? `data-tooltip="${esc(title)}"` : ''}>${visual}${esc(s.label)}${withLatency && s.latency !== undefined ? `<span class="status__latency">${s.latency} ms</span>` : ''}</span>`;
 }
 
@@ -117,12 +147,12 @@ function statusBadge(c, { withLatency = false } = {}) {
 /** Number of active filters in the collapsible panel (the search text is not counted). */
 function activeFilterCount() {
   const f = state.filters;
-  return [f.status, f.os, f.favorites, f.recent].filter(Boolean).length;
+  return [f.protocol, f.status, f.os, f.favorites, f.recent].filter(Boolean).length;
 }
 
 function filtersActive() {
   const f = state.filters;
-  return Boolean(f.q || f.status || f.os || f.favorites || f.recent);
+  return Boolean(f.q || f.protocol || f.status || f.os || f.favorites || f.recent);
 }
 
 function applyFilters(list) {
@@ -131,9 +161,10 @@ function applyFilters(list) {
   const weekAgo = Date.now() - 7 * 86400000;
   return list.filter((c) => {
     if (q) {
-      const hay = [c.name, c.host, c.os, c.location, c.folder, ...(c.tags || [])].join(' ').toLowerCase();
+      const hay = [c.name, c.host, PROTOCOL_LABELS[protoOf(c)], c.os, c.location, c.folder, ...(c.tags || [])].join(' ').toLowerCase();
       if (!q.split(/\s+/).every((t) => hay.includes(t))) return false;
     }
+    if (f.protocol && protoOf(c) !== f.protocol) return false;
     if (f.status && statusOf(c).key !== f.status) return false;
     if (f.os && c.os !== f.os) return false;
     if (f.favorites && !c.favorite) return false;
@@ -155,7 +186,7 @@ function toolbarHtml({ showFavoritesFilter = true, showViewToggle = false } = {}
     <div class="search">
       <label class="visually-hidden" for="search">Search systems</label>
       ${icon('search')}
-      <input class="input" id="search" type="search" value="${esc(f.q)}" placeholder="Search by name, host, OS, location or tag" autocomplete="off" spellcheck="false">
+      <input class="input" id="search" type="search" value="${esc(f.q)}" placeholder="Search by name, host, type, OS, location or tag" autocomplete="off" spellcheck="false">
     </div>
     <button class="btn btn--secondary filter-toggle" type="button" data-action="toggle-filters" aria-expanded="${state.filtersOpen}" aria-controls="filter-panel">
       ${icon('filter', 16)} Filters${activeFilterCount() ? ` <span class="filter-toggle__count" aria-label="${activeFilterCount()} active">${activeFilterCount()}</span>` : ''}
@@ -168,6 +199,8 @@ function toolbarHtml({ showFavoritesFilter = true, showViewToggle = false } = {}
     </div>` : ''}
     </div>
     <div class="toolbar__row toolbar__filters" id="filter-panel" ${state.filtersOpen ? '' : 'hidden'}>
+    ${protocolsInUse().length > 1 ? `<div class="filter"><label class="field__label" for="f-protocol">Type</label>
+      <select class="select" id="f-protocol" data-filter="protocol">${opt('', 'All', f.protocol)}${protocolsInUse().map((p) => opt(p, PROTOCOL_LABELS[p], f.protocol)).join('')}</select></div>` : ''}
     <div class="filter"><label class="field__label" for="f-status">Status</label>
       <select class="select" id="f-status" data-filter="status">${opt('', 'All', f.status)}${opt('available', 'Available', f.status)}${opt('busy', 'Busy', f.status)}${opt('offline', 'Offline', f.status)}${opt('unknown', 'Unknown', f.status)}</select></div>
     <div class="filter"><label class="field__label" for="f-os">Operating system</label>
@@ -183,9 +216,11 @@ function toolbarHtml({ showFavoritesFilter = true, showViewToggle = false } = {}
 function serverCard(c) {
   const st = statusOf(c);
   const connected = Boolean(c.activeSessionId);
-  return `<article class="card ${connected ? 'card--connected' : ''}" aria-label="${esc(c.name)}">
+  const p = protoOf(c);
+  const cardIcon = p === 'rdp' ? (/windows 1\d/i.test(c.os) ? 'monitor' : 'server') : PROTOCOL_ICONS[p];
+  return `<article class="card ${connected ? 'card--connected' : ''}" aria-label="${esc(c.name)}, ${PROTOCOL_LABELS[p]}">
     <div class="card__top">
-      <div class="card__icon">${icon(/windows 1\d/i.test(c.os) ? 'monitor' : 'server')}</div>
+      <div class="card__icon">${icon(cardIcon)}</div>
       <div class="card__top-actions">
         <button class="icon-btn fav-btn" type="button" data-action="favorite" data-id="${esc(c.id)}" aria-pressed="${c.favorite}" aria-label="${c.favorite ? `Remove ${esc(c.name)} from favorites` : `Add ${esc(c.name)} to favorites`}" data-tooltip="${c.favorite ? 'Remove from favorites' : 'Add to favorites'}">${icon('star')}</button>
         <button class="icon-btn" type="button" data-action="menu" data-id="${esc(c.id)}" aria-haspopup="menu" aria-expanded="false" aria-label="More actions for ${esc(c.name)}" data-tooltip="More actions">${icon('more')}</button>
@@ -193,17 +228,17 @@ function serverCard(c) {
     </div>
     <div>
       <h3><button class="card__title-btn" type="button" data-action="details" data-id="${esc(c.id)}">${esc(c.name)}</button></h3>
-      <p class="card__host">${esc(c.host)}${c.port !== 3389 ? `:${c.port}` : ''}</p>
+      <p class="card__host">${esc(addressOf(c))}</p>
       ${c.os ? `<p class="card__meta">${esc(c.os)}${c.location ? ` · ${esc(c.location)}` : ''}</p>` : (c.location ? `<p class="card__meta">${esc(c.location)}</p>` : '')}
     </div>
-    <div class="card__row">${statusBadge(c)} ${c.sample ? '<span class="badge badge--sample" data-tooltip="Mock data for demonstration">Sample</span>' : ''}${c.source === 'central' ? `<span class="badge" data-tooltip="Provided by IT. Read-only.">${icon('shield', 16)} Managed by IT</span>` : ''}</div>
+    <div class="card__row">${protocolBadge(c)} ${statusBadge(c)} ${c.sample ? '<span class="badge badge--sample" data-tooltip="Mock data for demonstration">Sample</span>' : ''}${c.source === 'central' ? `<span class="badge" data-tooltip="Provided by IT. Read-only.">${icon('shield', 16)} Managed by IT</span>` : ''}</div>
     <div class="card__footer">
       <span class="card__meta">${c.lastConnectedAt ? `Last used: ${esc(formatWhen(c.lastConnectedAt))}` : 'Not used yet'}</span>
       ${connected && c.activeState === 'connecting'
-        ? `<button class="btn btn--secondary" type="button" data-action="focus" data-session="${esc(c.activeSessionId)}" aria-label="Connecting to ${esc(c.name)}. Show the Remote Desktop window"><span class="spinner" aria-hidden="true"></span> Connecting…</button>`
+        ? `<button class="btn btn--secondary" type="button" data-action="focus" data-session="${esc(c.activeSessionId)}" aria-label="Connecting to ${esc(c.name)}. Show the session window"><span class="spinner" aria-hidden="true"></span> Connecting…</button>`
         : connected
         ? `<button class="btn btn--secondary" type="button" data-action="focus" data-session="${esc(c.activeSessionId)}">${icon('window')} Show</button>`
-        : `<button class="btn btn--primary" type="button" data-action="connect" data-id="${esc(c.id)}">Connect ${icon('arrowRight')}</button>`}
+        : `<button class="btn btn--primary" type="button" data-action="connect" data-id="${esc(c.id)}">${connectLabel(c)} ${icon(connectIcon(c))}</button>`}
     </div>
   </article>`;
 }
@@ -212,8 +247,9 @@ function serverRow(c) {
   return `<div class="list__row" role="row">
     <div class="list__name" role="cell">
       <button class="card__title-btn" type="button" data-action="details" data-id="${esc(c.id)}" style="font:var(--text-body-strong)">${esc(c.name)}</button>
-      <span class="card__host">${esc(c.host)}</span>
+      <span class="card__host">${esc(addressOf(c))}</span>
     </div>
+    <div role="cell">${protocolBadge(c)}</div>
     <div role="cell" class="small">${esc(c.os || '–')}</div>
     <div role="cell">${statusBadge(c)}</div>
     <div class="list__actions" role="cell">
@@ -221,7 +257,7 @@ function serverRow(c) {
       <button class="icon-btn" type="button" data-action="menu" data-id="${esc(c.id)}" aria-haspopup="menu" aria-expanded="false" aria-label="More actions for ${esc(c.name)}" data-tooltip="More actions">${icon('more')}</button>
       ${c.activeSessionId
         ? `<button class="btn btn--secondary btn--small" type="button" data-action="focus" data-session="${esc(c.activeSessionId)}">Show</button>`
-        : `<button class="btn btn--primary btn--small" type="button" data-action="connect" data-id="${esc(c.id)}">Connect</button>`}
+        : `<button class="btn btn--primary btn--small" type="button" data-action="connect" data-id="${esc(c.id)}">${connectLabel(c)}</button>`}
     </div>
   </div>`;
 }
@@ -229,7 +265,7 @@ function serverRow(c) {
 function systemsBlock(list) {
   if (state.view === 'list') {
     return `<div class="list" role="table" aria-label="Systems">
-      <div class="list__row list__head" role="row"><span role="columnheader">Name</span><span role="columnheader">Operating system</span><span role="columnheader">Status</span><span role="columnheader" class="visually-hidden">Actions</span></div>
+      <div class="list__row list__head" role="row"><span role="columnheader">Name</span><span role="columnheader">Type</span><span role="columnheader">Operating system</span><span role="columnheader">Status</span><span role="columnheader" class="visually-hidden">Actions</span></div>
       ${list.map(serverRow).join('')}</div>`;
   }
   return `<div class="grid">${list.map(serverCard).join('')}</div>`;
@@ -284,16 +320,18 @@ function sessionCard(s) {
       <div class="session__facts">
         <div><div class="fact__label">Started</div><div class="fact__value">${esc(formatWhen(s.startedAt))}</div></div>
         <div><div class="fact__label">Duration</div><div class="fact__value" ${live ? `data-duration-since="${esc(since)}"` : ''}>${duration ? formatDuration(duration) : '–'}</div></div>
-        <div><div class="fact__label">Display</div><div class="fact__value">${esc(s.displayMode)}</div></div>
-        <div><div class="fact__label">Launch</div><div class="fact__value">${s.launchMode === 'direct' ? 'Direct' : s.signed ? 'Signed file' : 'Connection file'}</div></div>
+        ${s.protocol === 'ssh'
+          ? `<div><div class="fact__label">Type</div><div class="fact__value">SSH${s.username ? ` as ${esc(s.username)}` : ''}</div></div>`
+          : `<div><div class="fact__label">Display</div><div class="fact__value">${esc(s.displayMode)}</div></div>
+        <div><div class="fact__label">Launch</div><div class="fact__value">${s.launchMode === 'direct' ? 'Direct' : s.signed ? 'Signed file' : 'Connection file'}</div></div>`}
       </div>
       ${r && !live ? `<div class="session__result"><div class="alert alert--${r.kind === 'error' ? 'error' : 'info'}">${icon(r.kind === 'error' ? 'xCircle' : 'info')}<div class="alert__body"><p class="alert__title">${esc(r.title)}</p><p class="alert__msg">${esc(r.message)}</p></div></div></div>` : ''}
       <details class="details"><summary>View session details</summary>
         <dl class="kv">
           <dt>Session ID</dt><dd class="mono">${esc(s.id)}</dd>
-          <dt>Client process</dt><dd class="mono">mstsc.exe (PID ${esc(s.pid || '–')})</dd>
+          <dt>Client process</dt><dd class="mono">${s.protocol === 'ssh' ? 'ssh.exe in cmd.exe' : 'mstsc.exe'} (PID ${esc(s.pid || '–')})</dd>
           <dt>Started</dt><dd>${esc(formatDateTime(s.startedAt))}</dd>
-          ${s.connectedAt ? `<dt>Connected</dt><dd>${esc(formatDateTime(s.connectedAt))}${s.verified ? '' : ' (not confirmed by the event log)'}</dd>` : ''}
+          ${s.connectedAt && s.protocol !== 'ssh' ? `<dt>Connected</dt><dd>${esc(formatDateTime(s.connectedAt))}${s.verified ? '' : ' (not confirmed by the event log)'}</dd>` : ''}
           ${s.endedAt ? `<dt>Ended</dt><dd>${esc(formatDateTime(s.endedAt))}</dd>` : ''}
           ${r && r.code ? `<dt>Technical code</dt><dd class="mono">${esc(r.code)}</dd>` : ''}
         </dl>
@@ -301,7 +339,7 @@ function sessionCard(s) {
     </div>
     <div class="session__actions">
       ${live ? `<button class="btn btn--secondary" type="button" data-action="focus" data-session="${esc(s.id)}">${icon('window')} Show window</button>
-                <button class="btn btn--danger" type="button" data-action="disconnect" data-session="${esc(s.id)}">${icon('disconnect')} Disconnect</button>`
+                <button class="btn btn--danger" type="button" data-action="disconnect" data-session="${esc(s.id)}">${icon('disconnect')} ${s.protocol === 'ssh' ? 'Close terminal' : 'Disconnect'}</button>`
              : `<button class="btn btn--primary" type="button" data-action="reconnect" data-id="${esc(s.connectionId)}">${icon('refresh')} Reconnect</button>`}
     </div>
   </article>`;
@@ -477,16 +515,16 @@ function viewDetails(id) {
     ${pageHeader(c.name, '', `
       ${c.source === 'central' ? '' : `<button class="btn btn--secondary" type="button" data-action="edit" data-id="${esc(c.id)}">${icon('edit')} Edit</button>`}
       ${c.activeSessionId ? `<button class="btn btn--secondary" type="button" data-action="focus" data-session="${esc(c.activeSessionId)}">${icon('window')} Show window</button>`
-        : `<button class="btn btn--primary" type="button" data-action="connect" data-id="${esc(c.id)}">Connect ${icon('arrowRight')}</button>`}`)}
-    <div class="card__row" style="margin:-12px 0 24px">${statusBadge(c, { withLatency: true })} ${c.sample ? '<span class="badge badge--sample">Sample (mock data)</span>' : ''}${c.source === 'central' ? `<span class="badge">${icon('shield', 16)} Managed by IT (read-only)</span>` : ''}
+        : `<button class="btn btn--primary" type="button" data-action="connect" data-id="${esc(c.id)}">${connectLabel(c)} ${icon(connectIcon(c))}</button>`}`)}
+    <div class="card__row" style="margin:-12px 0 24px">${protocolBadge(c)} ${statusBadge(c, { withLatency: true })} ${c.sample ? '<span class="badge badge--sample">Sample (mock data)</span>' : ''}${c.source === 'central' ? `<span class="badge">${icon('shield', 16)} Managed by IT (read-only)</span>` : ''}
       <button class="btn btn--ghost btn--small" type="button" data-action="probe" data-id="${esc(c.id)}">${icon('refresh', 16)} Check now</button></div>
-    ${st.key === 'offline' ? `<div class="alert alert--error" style="margin-bottom:24px">${icon('xCircle')}<div class="alert__body"><p class="alert__title">System not reachable</p><p class="alert__msg">${esc(OFFLINE_REASON[st.reason] || 'No response')}. Check that the system is online and that the VPN is active. Last checked ${esc(formatTime(c.status.checkedAt))}.</p></div></div>` : ''}
+    ${st.key === 'offline' ? `<div class="alert alert--error" style="margin-bottom:24px">${icon('xCircle')}<div class="alert__body"><p class="alert__title">System not reachable</p><p class="alert__msg">${esc((st.reason === 'refused' ? REFUSED_BY_TYPE[protoOf(c)] : OFFLINE_REASON[st.reason]) || 'No response')}. Check that the system is online and that the VPN is active. Last checked ${esc(formatTime(c.status.checkedAt))}.</p></div></div>` : ''}
     <div class="two-col">
       <div>
         <div class="settings-card">
           <h2 class="settings-card__title">System</h2>
           <dl class="kv" style="font:var(--text-body);margin-top:12px">
-            <dt>Computer name</dt><dd class="mono">${esc(c.host)}${c.port !== 3389 ? `:${c.port}` : ''}</dd>
+            <dt>${protoOf(c) === 'web' ? 'Address' : 'Computer name'}</dt><dd class="mono">${esc(addressOf(c))}</dd>
             <dt>Operating system</dt><dd>${esc(c.os || '–')}</dd>
             <dt>Location</dt><dd>${esc(c.location || '–')}</dd>
             <dt>Group</dt><dd>${esc(c.folder || '–')}</dd>
@@ -499,7 +537,7 @@ function viewDetails(id) {
           ${history.length ? historyTable(history) : emptyState({ iconName: 'clock', title: 'No sessions yet', message: 'Sessions to this system appear here.' })}</section>
       </div>
       <div class="settings">
-        <div class="settings-card">
+        ${protoOf(c) === 'rdp' ? `<div class="settings-card">
           <h2 class="settings-card__title">Sign-in</h2>
           <dl class="kv" style="margin:12px 0 16px"><dt>Username</dt><dd>${esc(c.username || 'Suggested by Windows')}</dd><dt>Password</dt><dd data-cred>Checking…</dd></dl>
           <div class="page__actions" data-cred-actions></div>
@@ -518,17 +556,40 @@ function viewDetails(id) {
             <dt>Credentials</dt><dd>${esc(prot)}</dd>
             <dt>Admin session</dt><dd>${yes(c.security.adminSession)}</dd>
           </dl>
-        </div>
+        </div>` : otherTypeDetails(c)}
         <div class="settings-card">
           <h2 class="settings-card__title">More actions</h2>
           <div class="page__actions" style="margin-top:12px">
-            <button class="btn btn--secondary" type="button" data-action="export" data-id="${esc(c.id)}">${icon('download')} Export .rdp</button>
+            ${protoOf(c) === 'rdp' ? `<button class="btn btn--secondary" type="button" data-action="export" data-id="${esc(c.id)}">${icon('download')} Export .rdp</button>` : ''}
             <button class="btn btn--secondary" type="button" data-action="duplicate" data-id="${esc(c.id)}">${icon('copy')} Duplicate</button>
             ${c.source === 'central' ? '' : `<button class="btn btn--danger" type="button" data-action="delete" data-id="${esc(c.id)}">${icon('trash')} Remove system</button>`}
           </div>
         </div>
       </div>
     </div></div>`;
+}
+
+/** Sign-in and options for SSH and web systems. Passwords are never stored for these types. */
+function otherTypeDetails(c) {
+  if (protoOf(c) === 'web') {
+    return `<div class="settings-card">
+      <h2 class="settings-card__title">Web address</h2>
+      <dl class="kv" style="margin-top:12px"><dt>Opens</dt><dd class="mono">${esc(addressOf(c))}</dd><dt>Sign-in</dt><dd>On the web page</dd></dl>
+      <p class="small muted" style="margin-top:12px">The page opens in your default browser. The app does not track web sessions.</p>
+    </div>`;
+  }
+  const o = c.ssh || {};
+  const sshMissing = state.info && state.info.sshAvailable === false;
+  return `<div class="settings-card">
+      <h2 class="settings-card__title">SSH</h2>
+      <dl class="kv" style="margin-top:12px">
+        <dt>Username</dt><dd>${esc(c.username || 'Asked in the terminal')}</dd>
+        <dt>Sign-in</dt><dd>${o.identityFile ? `Key file <span class="mono">${esc(o.identityFile)}</span>` : 'Password or key, asked in the terminal'}</dd>
+        <dt>Jump host</dt><dd>${o.jumpHost ? `<span class="mono">${esc(o.jumpHost)}</span>` : 'Not used'}</dd>
+      </dl>
+      <p class="small muted" style="margin-top:12px">Opens in a terminal window with the OpenSSH client from Windows. The app never stores SSH passwords.</p>
+      ${sshMissing ? `<div class="alert alert--warning" style="margin-top:12px">${icon('warning')}<div class="alert__body"><p class="alert__title">The SSH client is not installed</p><p class="alert__msg">Install the optional Windows feature "OpenSSH Client" or ask your IT service desk.</p></div></div>` : ''}
+    </div>`;
 }
 
 function backLink() {
@@ -912,10 +973,10 @@ async function deleteSystem(id) {
 function systemMenu(anchor, c) {
   showMenu(anchor, [
     { label: 'View details', icon: 'info', action: () => navigate('details', c.id) },
-    { label: c.activeSessionId ? 'Show session window' : 'Connect', icon: c.activeSessionId ? 'window' : 'connect', action: () => (c.activeSessionId ? focusSession(c.activeSessionId) : openConnectDialog(c)) },
+    { label: c.activeSessionId ? 'Show session window' : protoOf(c) === 'web' ? 'Open in browser' : 'Connect', icon: c.activeSessionId ? 'window' : protoOf(c) === 'web' ? 'external' : 'connect', action: () => (c.activeSessionId ? focusSession(c.activeSessionId) : openConnectDialog(c)) },
     { label: 'Edit', icon: 'edit', disabled: c.source === 'central', action: () => openEditDialog(c) },
     { label: 'Duplicate', icon: 'copy', action: () => openEditDialog({ ...c, id: undefined, name: `${c.name} (copy)`, favorite: false, sample: false, lastConnectedAt: null }) },
-    { label: 'Export .rdp file', icon: 'download', action: () => exportSystem(c.id) },
+    ...(protoOf(c) === 'rdp' ? [{ label: 'Export .rdp file', icon: 'download', action: () => exportSystem(c.id) }] : []),
     'sep',
     { label: 'Remove system', icon: 'trash', danger: true, disabled: c.source === 'central', action: () => deleteSystem(c.id) },
   ]);
@@ -954,23 +1015,30 @@ function notificationsPanel() {
   });
 }
 
-/** Host name, IPv4, IPv6 (bare or in brackets), each optionally with :port. */
-function isAddress(v) {
-  return /^[A-Za-z0-9._-]+(:\d{1,5})?$/.test(v) || /^\[[0-9A-Fa-f:.]+\](:\d{1,5})?$/.test(v) || (/^[0-9A-Fa-f:.]+$/.test(v) && (v.match(/:/g) || []).length > 1);
+const QC_HINT = {
+  rdp: 'Windows asks for your username and password',
+  ssh: 'Opens a terminal window. ssh asks for your password or uses your key',
+  web: 'Opens in your default browser',
+};
+
+function protocolAllowedHere(p) {
+  const allowed = state.info && state.info.policy && state.info.policy.allowedProtocols;
+  return !allowed || allowed.includes(p);
 }
 
 /**
- * Quick connect (Ctrl+K): type a host name or IP address and connect immediately, without creating a
- * system first. Windows then asks for username and password. Matching saved systems are listed below.
+ * Quick connect (Ctrl+K): type an address and connect without creating a system first. The type is
+ * detected from the text ("ssh user@host", "https://…", "host:22"); a bare host offers RDP, SSH and Web.
  */
 function quickConnect(prefill = '') {
   if (document.querySelector('.overlay') || !state.info || !state.info.access.allowed) return;
   const listId = 'qc-list';
   const dlg = openDialog({
     title: 'Quick connect',
-    subtitle: 'Enter a computer name or IP address to connect right away, or pick a saved system.',
-    body: `<div class="search" style="max-width:none"><label class="visually-hidden" for="qc-input">Computer name, IP address or saved system</label>${icon('connect')}
-        <input class="input" id="qc-input" type="text" role="combobox" aria-expanded="true" aria-controls="${listId}" aria-autocomplete="list" placeholder="for example server01.corp.local, 10.20.30.40 or 10.20.30.40:3390" autocomplete="off" spellcheck="false" autofocus></div>
+    subtitle: 'Enter an address to connect right away, or pick a saved system.',
+    body: `<div class="search" style="max-width:none"><label class="visually-hidden" for="qc-input">Address or saved system</label>${icon('connect')}
+        <input class="input" id="qc-input" type="text" role="combobox" aria-expanded="true" aria-controls="${listId}" aria-autocomplete="list" aria-describedby="qc-examples" placeholder="server01, ssh admin@linux01 or https://ilo01" autocomplete="off" spellcheck="false" autofocus></div>
+      <p class="small muted" id="qc-examples" style="margin-top:6px">Examples: <span class="mono">server01</span> (Remote Desktop), <span class="mono">ssh admin@linux01</span> or <span class="mono">admin@linux01:2222</span> (SSH), <span class="mono">https://ilo01</span> (Web)</p>
       <ul class="qc-list" id="${listId}" role="listbox" aria-label="Connection targets"></ul>
       <label class="check" style="margin-top:8px"><input type="checkbox" id="qc-save"><span class="check__text"><span>Save to My systems</span><span class="check__help">Otherwise the address is used once and not stored. It still appears in Recent sessions.</span></span></label>
       <p class="small muted" style="margin-top:8px">Arrow keys to choose, Enter to connect, Esc to close.</p>`,
@@ -984,18 +1052,18 @@ function quickConnect(prefill = '') {
     const raw = input.value.trim();
     const q = raw.toLowerCase();
     const all = [...state.connections].sort((a, b) => (b.lastConnectedAt || '').localeCompare(a.lastConnectedAt || '') || a.name.localeCompare(b.name));
-    const matches = all.filter((c) => !q || [c.name, c.host, ...(c.tags || [])].join(' ').toLowerCase().includes(q)).slice(0, 7);
-    const exact = matches.some((c) => c.host.toLowerCase() === q || `${c.host}:${c.port}`.toLowerCase() === q);
+    const matches = all.filter((c) => !q || [c.name, c.host, addressOf(c), ...(c.tags || [])].join(' ').toLowerCase().includes(q)).slice(0, 7);
+    const saved = (t) => matches.some((c) => protoOf(c) === t.protocol && c.host.toLowerCase() === t.host.toLowerCase() && c.port === t.port);
     options = [];
-    if (raw && isAddress(raw) && !exact) options.push({ type: 'address', value: raw });
+    for (const t of parseTargets(raw)) if (protocolAllowedHere(t.protocol) && !saved(t)) options.push({ type: 'address', target: t });
     for (const c of matches) options.push({ type: 'system', conn: c });
     index = Math.min(index, Math.max(0, options.length - 1));
     list.innerHTML = options.length ? options.map((o, i) => (o.type === 'address'
       ? `<li class="qc-item qc-item--address" role="option" id="qc-${i}" aria-selected="${i === index}" data-i="${i}">
-          <span class="qc-item__main"><strong>${icon('connect', 16)} Connect to ${esc(o.value)}</strong><span class="small muted">Windows asks for your username and password</span></span><kbd>Enter</kbd></li>`
+          <span class="qc-item__main"><strong>${icon(PROTOCOL_ICONS[o.target.protocol], 16)} ${esc(describeTarget(o.target))}</strong><span class="small muted">${QC_HINT[o.target.protocol]}</span></span>${i === index ? '<kbd>Enter</kbd>' : ''}</li>`
       : `<li class="qc-item" role="option" id="qc-${i}" aria-selected="${i === index}" data-i="${i}">
-          <span class="qc-item__main"><strong>${esc(o.conn.name)}</strong><span class="card__host">${esc(o.conn.host)}</span></span>${statusBadge(o.conn)}</li>`)).join('')
-      : `<li class="qc-empty">${raw ? 'Not a valid computer name or IP address, and no saved system matches.' : 'Type a computer name or IP address.'}</li>`;
+          <span class="qc-item__main"><strong>${esc(o.conn.name)}</strong><span class="card__host">${esc(addressOf(o.conn))}</span></span>${protocolBadge(o.conn)} ${statusBadge(o.conn)}</li>`)).join('')
+      : `<li class="qc-empty">${raw ? 'Not a valid address, and no saved system matches.' : 'Type a computer name, IP address or web address.'}</li>`;
     if (options.length) input.setAttribute('aria-activedescendant', `qc-${index}`); else input.removeAttribute('aria-activedescendant');
   };
   const choose = async (i) => {
@@ -1008,7 +1076,7 @@ function quickConnect(prefill = '') {
       return;
     }
     try {
-      const conn = await call(window.rdp.sessions.quickTarget({ address: o.value, save }));
+      const conn = await call(window.rdp.sessions.quickTarget({ address: input.value, protocol: o.target.protocol, save }));
       if (save) { await loadData(); toast(`${conn.name} saved to My systems`); }
       if (conn.activeSessionId) { focusSession(conn.activeSessionId); return; }
       runConnect(conn, null, { quick: true });
@@ -1068,7 +1136,7 @@ async function handleClick(e) {
       break;
     }
     case 'clear-filters':
-      state.filters = { q: '', status: '', os: '', favorites: false, recent: false };
+      state.filters = { q: '', protocol: '', status: '', os: '', favorites: false, recent: false };
       render();
       $('#search') && $('#search').focus();
       break;
@@ -1171,7 +1239,7 @@ document.addEventListener('keydown', (e) => {
 // Live session durations
 setInterval(() => {
   if (document.hidden) return;
-  $('[data-duration-since]').forEach((el) => { el.textContent = formatDuration((Date.now() - Date.parse(el.dataset.durationSince)) / 1000); });
+  $$('[data-duration-since]').forEach((el) => { el.textContent = formatDuration((Date.now() - Date.parse(el.dataset.durationSince)) / 1000); });
 }, 15000);
 
 // ── Events from the main process ──────────────────────

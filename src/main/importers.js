@@ -132,7 +132,7 @@ function parseMremote(text) {
     throw new Error('The file is fully encrypted. Export it from mRemoteNG without full-file encryption, then import it again.');
   }
   const results = [];
-  let skipped = 0;
+  const skipped = {};
   let sawPassword = false;
 
   const resolve = (node, parent) => {
@@ -148,19 +148,45 @@ function parseMremote(text) {
         continue;
       }
       if (node['@_Type'] !== 'Connection') continue;
-      if (str(node['@_Protocol']).toUpperCase() !== 'RDP') { skipped += 1; continue; }
+      const proto = str(node['@_Protocol']).toUpperCase();
       const warnings = [];
       if (str(node['@_Password']) || str(node['@_RDGatewayPassword'])) { warnings.push('A stored password was found and was discarded.'); sawPassword = true; }
-      if (str(node['@_RedirectDiskDrives']).toLowerCase() === 'true') warnings.push('The file requested local drive access. It is imported as switched off.');
-      results.push({ connection: mremoteConnection(node, values, path), warnings });
+      if (proto === 'RDP') {
+        if (str(node['@_RedirectDiskDrives']).toLowerCase() === 'true') warnings.push('The file requested local drive access. It is imported as switched off.');
+        results.push({ connection: mremoteConnection(node, values, path), warnings });
+      } else if (proto === 'SSH2' || proto === 'SSH1') {
+        if (proto === 'SSH1') warnings.push('SSH version 1 is outdated and insecure. The connection uses SSH version 2.');
+        if (str(node['@_PuttySession']) && str(node['@_PuttySession']) !== 'Default Settings') warnings.push('PuTTY session settings are not imported.');
+        results.push({ connection: { ...mremoteBase(node, values, path), protocol: 'ssh', username: str(values.Username), port: Number(str(values.Port)) || 22 }, warnings });
+      } else if (proto === 'HTTP' || proto === 'HTTPS') {
+        const scheme = proto === 'HTTP' ? 'http' : 'https';
+        results.push({ connection: { ...mremoteBase(node, values, path), protocol: 'web', username: '', port: Number(str(values.Port)) || (scheme === 'http' ? 80 : 443), web: { scheme, path: '' } }, warnings });
+      } else {
+        skipped[proto || 'unknown'] = (skipped[proto || 'unknown'] || 0) + 1;
+      }
     }
   };
   walk(root.Node, [], null);
 
   const warnings = [];
   if (sawPassword) warnings.push('Passwords from the file are never imported. Save them again in the app if needed.');
-  if (skipped) warnings.push(`${skipped} connection${skipped === 1 ? '' : 's'} with other protocols (SSH, VNC, HTTP …) were skipped.`);
+  const skippedTotal = Object.values(skipped).reduce((a, b) => a + b, 0);
+  if (skippedTotal) warnings.push(`${skippedTotal} connection${skippedTotal === 1 ? '' : 's'} with unsupported types were skipped (${Object.entries(skipped).map(([k, n]) => `${k}: ${n}`).join(', ')}).`);
   return { items: results, warnings };
+}
+
+/** Fields every connection type shares. */
+function mremoteBase(node, v, path) {
+  const host = str(node['@_Hostname']);
+  const user = str(v.Username);
+  const domain = str(v.Domain);
+  return {
+    name: str(node['@_Name']) || host,
+    host,
+    username: user ? (domain && !user.includes('\\') && !user.includes('@') ? `${domain}\\${user}` : user) : '',
+    folder: path.join(' / '),
+    description: str(node['@_Descr']),
+  };
 }
 
 function mremoteConnection(node, v, path) {
