@@ -300,7 +300,10 @@ class TabManager {
       active: host.active,
       isMain: host.isMain,
       fullscreen: host.win.isFullScreen(),
+      elsewhere: host.isMain && [...this.hosts.values()].some((h) => !h.isMain && h.tabs.length),
     });
+    // The main window shows its tab bar as a drop target while tabs live in other windows.
+    if (!host.isMain) { const main = this.hosts.get(this.getMainWindow() && this.getMainWindow().id); if (main) this.push(main); }
     if (!host.isMain) host.win.setTitle(`${this.titleOf(host)} – BearingPoint Remote Desktop`);
   }
 
@@ -316,7 +319,8 @@ class TabManager {
       if (host === except || host.win.isDestroyed() || !host.win.isVisible() || host.win.isMinimized() || !host.layout || !host.layout.strip) continue;
       const cb = host.win.getContentBounds();
       const s = host.layout.strip;
-      const r = { x: cb.x + s.x, y: cb.y + s.y - 12, w: s.w, h: s.h + 24 };
+      // In the main window the whole top area (header and tab bar) accepts a dropped tab.
+      const r = host.isMain ? { x: cb.x, y: cb.y - 40, w: cb.width, h: s.y + s.h + 52 } : { x: cb.x + s.x, y: cb.y + s.y - 12, w: s.w, h: s.h + 24 };
       if (point.x >= r.x && point.x <= r.x + r.w && point.y >= r.y && point.y <= r.y + r.h) return host;
     }
     return null;

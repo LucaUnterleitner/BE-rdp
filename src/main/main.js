@@ -897,10 +897,14 @@ function devTabTest() {
     while (!tabs.helpers.size) await wait(500);
     const id = [...tabs.helpers.keys()][0];
     await wait(4000); log('in main window');
-    tabs.detachToNewWindow(id); await wait(4000); log('detached');
+    const dom = () => win.webContents.executeJavaScript(`JSON.stringify({ strip: !document.getElementById('tabstrip').hidden, area: !document.getElementById('session-area').hidden, body: !document.querySelector('.shell__body').hidden, tabs: [...document.querySelectorAll('[data-tab-id]')].map((t) => t.getAttribute('aria-selected')) })`);
+    tabs.detachToNewWindow(id); await wait(4000); log(`detached, main ${await dom()}`);
     tabs.toggleFullscreen(id); await wait(4000); log(`fullscreen ${tabs.hostOfSession(id).win.isFullScreen()}`);
-    tabs.toggleFullscreen(id); await wait(3000); log('windowed');
-    tabs.mergeInto(tabs.hostOfSession(id), tabs.mainHost()); await wait(4000); log(`docked, windows=${tabs.hosts.size}`);
+    const detached = tabs.hostOfSession(id);
+    tabs.pinbarAction(detached.pinbar, 'dock'); await wait(3000);
+    log(`back to app: main.active=${tabs.mainHost().active === id} windows=${tabs.hosts.size} main ${await dom()}`);
+    await win.webContents.executeJavaScript(`document.querySelector('[data-tab-home]').click()`); await wait(1500); log(`home clicked, main ${await dom()}`);
+    await win.webContents.executeJavaScript(`document.querySelector('[data-tab-id]').click()`); await wait(1500); log(`tab clicked, main ${await dom()}`);
     sessions.disconnect(id); await wait(3000); log(`disconnected, tabs=${tabs.mainHost().tabs.length}`);
   })().catch((e) => log(`error ${e.message}`));
 }

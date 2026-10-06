@@ -13,6 +13,7 @@ const STATE_TEXT = { connecting: 'Connecting', active: 'Connected', reconnecting
 export function mountTabStrip({ strip, area, showHome = false, onChange = () => {} }) {
   let model = { tabs: [], active: null, isMain: showHome, fullscreen: false };
   let drag = null;
+  let suppressClick = false; // set when a pointer gesture became a drag, so its click does not switch tabs
 
   const announce = (text) => {
     const a = document.getElementById('announcer');
@@ -36,8 +37,9 @@ export function mountTabStrip({ strip, area, showHome = false, onChange = () => 
       ? `<div class="stab stab--home ${model.active ? '' : 'stab--active'}"><button class="stab__main" type="button" role="tab" id="stab-home" aria-selected="${!model.active}" tabindex="${model.active ? -1 : 0}" data-tab-home>${icon('dashboard', 16)}<span class="stab__name">Home</span></button></div>`
       : '';
     strip.innerHTML = `<div class="tabstrip__tabs" role="tablist" aria-label="Open sessions">${home}${model.tabs.map(tabHtml).join('')}</div>
-      <span class="tabstrip__hint">Drag a tab out to open it in its own window</span>`;
-    strip.hidden = model.fullscreen || (showHome && !model.tabs.length);
+      <span class="tabstrip__hint">${showHome && !model.tabs.length ? 'Drag a session tab here to bring it back into the app' : 'Drag a tab out to open it in its own window'}</span>`;
+    // The main window keeps its tab bar while sessions are open in other windows: it is where they can be docked.
+    strip.hidden = model.fullscreen || (showHome && !model.tabs.length && !model.elsewhere);
     const active = model.tabs.find((t) => t.id === model.active);
     area.hidden = !active;
     area.innerHTML = active ? placeholderHtml(active) : '';
@@ -88,7 +90,8 @@ export function mountTabStrip({ strip, area, showHome = false, onChange = () => 
     if (close) { window.rdp.tabs.close(close.dataset.tabClose); return; }
     if (e.target.closest('[data-tab-home]')) { window.rdp.tabs.activate(null); return; }
     const tab = e.target.closest('[data-tab-id]');
-    if (tab && !drag) window.rdp.tabs.activate(tab.dataset.tabId);
+    if (suppressClick) { suppressClick = false; return; }
+    if (tab) window.rdp.tabs.activate(tab.dataset.tabId);
   });
 
   strip.addEventListener('contextmenu', (e) => {
@@ -123,10 +126,15 @@ export function mountTabStrip({ strip, area, showHome = false, onChange = () => 
     const outside = e.clientY < s.top - DRAG_THRESHOLD || e.clientY > s.bottom + DRAG_THRESHOLD;
     if (outside || Math.abs(e.clientY - drag.y) > DRAG_THRESHOLD * 2) {
       drag.started = true;
+      suppressClick = true;
       window.rdp.tabs.dragStart(drag.id);
     }
   });
-  const endDrag = () => { const d = drag; setTimeout(() => { if (drag === d) drag = null; }, 0); };
+  const endDrag = () => {
+    drag = null;
+    // A click follows pointerup only on the same element; clear the flag if none comes.
+    setTimeout(() => { suppressClick = false; }, 0);
+  };
   strip.addEventListener('pointerup', endDrag);
   strip.addEventListener('pointercancel', endDrag);
 
