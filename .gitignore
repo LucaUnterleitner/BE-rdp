@@ -2,3 +2,4 @@ node_modules/
 dist/
 *.log
 resources/bin/
+dist-release/
