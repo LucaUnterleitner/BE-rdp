@@ -6,11 +6,12 @@
   "main": "src/main/main.js",
   "private": true,
   "scripts": {
-    "start": "electron .",
+    "start": "node tools/build-helper.js && electron .",
     "test": "node --test test/*.test.js",
     "icons": "node tools/make-icons.js",
-    "dist:msi": "electron-builder --win msi --x64",
-    "dist:dir": "electron-builder --win dir --x64"
+    "build:helper": "node tools/build-helper.js",
+    "dist:msi": "node tools/build-helper.js && electron-builder --win msi --x64",
+    "dist:dir": "node tools/build-helper.js && electron-builder --win dir --x64"
   },
   "author": "BearingPoint",
   "license": "UNLICENSED",
@@ -66,6 +67,15 @@
       "createDesktopShortcut": false,
       "createStartMenuShortcut": true,
       "shortcutName": "BearingPoint Remote Desktop"
-    }
+    },
+    "extraResources": [
+      {
+        "from": "resources/bin",
+        "to": "bin",
+        "filter": [
+          "BpRdpHost.exe"
+        ]
+      }
+    ]
   }
 }

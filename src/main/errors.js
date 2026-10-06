@@ -64,4 +64,9 @@ function allReasons() {
     .map(([code, v]) => ({ code: hex(code), title: v.title, message: v.message }));
 }
 
-module.exports = { explainDisconnect, explainProbe, allReasons, hex };
+/** True when the app has its own explanation for this disconnect reason. */
+function isKnownReason(code) {
+  return Object.prototype.hasOwnProperty.call(DISCONNECT_REASONS, code);
+}
+
+module.exports = { explainDisconnect, explainProbe, allReasons, hex, isKnownReason };

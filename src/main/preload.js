@@ -44,10 +44,23 @@ contextBridge.exposeInMainWorld('rdp', {
     disconnect: invoke('sessions:disconnect'),
     clearEnded: invoke('sessions:clearEnded'),
   },
+  tabs: {
+    layout: invoke('tabs:layout'),
+    activate: invoke('tabs:activate'),
+    dragStart: invoke('tabs:dragStart'),
+    menu: invoke('tabs:menu'),
+    fullscreen: invoke('tabs:fullscreen'),
+    close: invoke('tabs:close'),
+    state: invoke('tabs:state'),
+  },
+  pinbar: {
+    state: invoke('pinbar:state'),
+    action: invoke('pinbar:action'),
+  },
   audit: { list: invoke('audit:list') },
   help: { errorCodes: invoke('help:errorCodes') },
   on(channel, handler) {
-    const allowed = ['session:update', 'connect:progress', 'status:update', 'app:connect-request', 'connections:changed'];
+    const allowed = ['session:update', 'connect:progress', 'status:update', 'app:connect-request', 'connections:changed', 'tabs:update', 'tabs:dropHint'];
     if (!allowed.includes(channel)) throw new Error(`Channel not allowed: ${channel}`);
     const listener = (_event, payload) => handler(payload);
     ipcRenderer.on(channel, listener);

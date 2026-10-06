@@ -31,8 +31,38 @@ a { color: inherit; }
 .skip-link:focus { top: var(--space-2); }
 
 /* ── App shell ─────────────────────────────────────────── */
-.shell { display: grid; grid-template-rows: var(--topbar-height) minmax(0, 1fr); height: 100vh; overflow: hidden; }
-.shell__body { display: grid; grid-template-columns: auto minmax(0, 1fr); min-height: 0; overflow: hidden; }
+.shell { display: grid; grid-template-rows: var(--topbar-height) auto minmax(0, 1fr); height: 100vh; overflow: hidden; }
+.shell__body { display: grid; grid-template-columns: auto minmax(0, 1fr); min-height: 0; overflow: hidden; grid-row: 3; }
+.shell__body[hidden] { display: none; }
+.shell > .topbar { grid-row: 1; }
+
+/* Session tabs. The remote desktop is a native window placed over .session-area by the main process. */
+.tabstrip { grid-row: 2; display: flex; align-items: flex-end; gap: var(--space-3); min-width: 0; padding: 6px var(--space-3) 0; background: var(--color-gray-100); border-bottom: 1px solid var(--color-border); }
+.tabstrip[hidden] { display: none; }
+.tabstrip--drop { background: var(--color-selected-bg); box-shadow: inset 0 -3px 0 var(--color-primary); }
+.tabstrip__tabs { display: flex; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: thin; }
+.tabstrip__hint { margin-left: auto; padding-bottom: 8px; font: var(--text-secondary); color: var(--color-text-secondary); white-space: nowrap; }
+.stab { display: flex; align-items: center; min-width: 120px; max-width: 220px; border: 1px solid transparent; border-bottom: 0; border-radius: var(--radius-small) var(--radius-small) 0 0; color: var(--color-gray-700); }
+.stab--home { min-width: 0; }
+.stab:hover { background: var(--color-gray-200); }
+.stab--active { background: var(--color-surface); border-color: var(--color-border); color: var(--color-text-primary); box-shadow: inset 0 2px 0 var(--color-primary); }
+.stab--active:hover { background: var(--color-surface); }
+.stab__main { flex: 1; min-width: 0; display: flex; align-items: center; gap: var(--space-2); height: 34px; padding: 0 var(--space-2) 0 var(--space-3); border: 0; background: none; color: inherit; font: var(--text-body); cursor: pointer; touch-action: none; }
+.stab--active .stab__main { font-weight: 600; }
+.stab__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stab__close { display: grid; place-items: center; width: 24px; height: 24px; margin-right: 6px; border: 0; border-radius: var(--radius-small); background: none; color: var(--color-gray-700); cursor: pointer; flex: none; }
+.stab__close:hover { background: var(--color-gray-200); color: var(--color-text-primary); }
+.stab__dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--color-gray-500); }
+.stab__dot--active { background: var(--color-success); }
+.stab__dot--failed { background: var(--color-error); }
+.stab__spinner { width: 12px; height: 12px; }
+.session-area { grid-row: 3; position: relative; min-height: 0; background: #1f1f1f; color: #f2f2f2; display: grid; place-items: center; outline: none; }
+.session-area[hidden] { display: none; }
+.session-area__placeholder { display: grid; justify-items: center; gap: var(--space-2); text-align: center; padding: var(--space-6); }
+.session-area__title { font: var(--text-body-strong); }
+.session-area__msg { font: var(--text-secondary); color: #c8c8c8; }
+body.is-fullscreen .shell { grid-template-rows: 0 0 minmax(0, 1fr); }
+body.is-fullscreen .topbar, body.is-fullscreen .tabstrip { display: none; }
 
 .topbar {
   display: flex; align-items: center; gap: var(--space-4);
@@ -497,3 +527,16 @@ kbd {
 
 /* Quick connect: the typed address is the first, emphasized option */
 .qc-item--address strong { display: inline-flex; align-items: center; gap: var(--space-2); }
+
+/* Window for dragged-out session tabs */
+.host-shell { display: grid; grid-template-rows: auto minmax(0, 1fr); height: 100vh; overflow: hidden; background: #1f1f1f; }
+.host-shell .tabstrip, .host-shell .session-area { grid-row: auto; }
+body.is-fullscreen .host-shell { grid-template-rows: minmax(0, 1fr); }
+
+/* Full-screen bar */
+.pinbar { display: flex; align-items: center; gap: var(--space-2); height: 100vh; padding: 0 var(--space-2) 0 var(--space-3); background: #1f1f1f; color: #f2f2f2; font: var(--text-secondary); overflow: hidden; }
+.pinbar__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.pinbar button { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border: 1px solid #5a5a5a; border-radius: var(--radius-small); background: #2c2c2c; color: #f2f2f2; font: var(--text-secondary); cursor: pointer; white-space: nowrap; }
+.pinbar button:hover { background: #3a3a3a; }
+.pinbar button:focus-visible { outline: 2px solid #ffffff; outline-offset: 1px; }
+.pinbar--collapsed > * { display: none; }

@@ -10,7 +10,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const { buildRdp, encodeRdp, buildDirectArgs, protectionArgs } = require('./rdpfile');
-const { explainDisconnect } = require('./errors');
+const { explainDisconnect, isKnownReason } = require('./errors');
 const { runPowerShell } = require('./ps');
 const win32 = require('./win32');
 
@@ -140,6 +140,75 @@ class SessionManager extends EventEmitter {
     const was = this.background;
     this.background = Boolean(on);
     if (was && !on && this.pollTimer) this.schedulePoll(0);
+  }
+
+  /**
+   * Start an RDP session inside the app (a tab). The session state comes from the ActiveX events of the
+   * helper process (RdpHost), not from the event log. Returns the public session and the helper.
+   */
+  startEmbedded(conn, host) {
+    const id = crypto.randomUUID();
+    const session = {
+      id,
+      protocol: 'rdp',
+      connectionId: conn.id,
+      name: conn.name,
+      host: conn.host,
+      port: conn.port || 3389,
+      username: conn.username || '',
+      gateway: conn.gateway && conn.gateway.mode !== 'none' ? conn.gateway.host : '',
+      displayMode: 'Tab in the app',
+      launchMode: 'embedded',
+      signed: false,
+      state: 'connecting',
+      startedAt: new Date().toISOString(),
+      connectedAt: null,
+      endedAt: null,
+      pid: host.pid,
+      result: null,
+      verified: true,
+      lastChange: Date.now(),
+    };
+    this.sessions.set(id, session);
+    this.children.set(id, { kill: () => host.disconnect() });
+    this.emit('update', publicView(session));
+
+    const now = () => new Date().toISOString();
+    host.on('loginComplete', () => {
+      if (isLive(session.state)) this.update(session, { state: 'active', connectedAt: session.connectedAt || now(), result: null, lastChange: Date.now() });
+    });
+    host.on('autoReconnecting', (d) => {
+      if (session.state === 'active') this.update(session, { state: 'reconnecting', result: explainDisconnect(d && d.reason), lastChange: Date.now() });
+    });
+    host.on('autoReconnected', () => {
+      if (session.state === 'reconnecting') this.update(session, { state: 'active', result: null, lastChange: Date.now() });
+    });
+    host.on('logonError', (code) => {
+      // For example a wrong password: the control lets the user try again, so only show a hint.
+      if (session.state === 'connecting') this.update(session, { result: { kind: 'error', hint: true, code: String(code), title: 'Sign-in did not work', message: 'Check your username and password.' } });
+    });
+    host.on('disconnected', (d) => {
+      const reason = d && Number.isInteger(d.reason) ? d.reason : null;
+      const wasConnected = ['active', 'reconnecting'].includes(session.state);
+      let result = explainDisconnect(reason);
+      if (result && result.kind === 'error' && d && d.text && !isKnownReason(reason)) result = { ...result, message: d.text };
+      let state = result && result.kind === 'error' ? 'failed' : 'ended';
+      if (session.userDisconnect) {
+        state = 'ended';
+        result = wasConnected
+          ? { kind: 'normal', title: 'Disconnected', message: 'You closed the tab. Your remote session keeps running on the server until you sign out inside it.' }
+          : { kind: 'normal', title: 'Connection cancelled', message: 'You cancelled the connection before the session was established.' };
+      }
+      session.finished = true;
+      this.update(session, { state, endedAt: now(), result: result || { kind: 'normal', title: 'Session closed', message: 'The remote session ended.' } });
+    });
+    host.on('exit', () => {
+      this.children.delete(id);
+      if (!session.finished && isLive(session.state)) {
+        this.update(session, { state: 'failed', endedAt: now(), result: { kind: 'error', title: 'The session stopped unexpectedly', message: 'The Remote Desktop component in the app closed. Reconnect to continue; your remote session is still running on the server.' } });
+      }
+    });
+    return publicView(session);
   }
 
   /**
@@ -342,7 +411,7 @@ function isLive(state) {
 }
 
 function publicView(s) {
-  const { rdpPath, failedEarly, userDisconnect, lastChange, ...rest } = s;
+  const { rdpPath, failedEarly, userDisconnect, lastChange, finished, ...rest } = s;
   return { ...rest };
 }
 

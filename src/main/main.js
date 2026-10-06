@@ -16,6 +16,8 @@ const { applyPolicy, buildRdp, encodeRdp, decodeRdp, rdpToConnection, parseAddre
 const { explainProbe, allReasons } = require('./errors');
 const win32 = require('./win32');
 const launchers = require('./launchers');
+const { RdpHost, helperPath, helperAvailable } = require('./embedded');
+const { TabManager } = require('./tabs');
 const { enabledTargets, PROTOCOL_LABELS, ENABLED_PROTOCOLS } = require('../renderer/js/targets.js');
 
 const APP_ID = 'com.bearingpoint.remotedesktop';
@@ -31,10 +33,14 @@ app.setPath('userData', DATA_DIR);
 // Chromium caches stay local instead of roaming with the profile.
 app.setPath('sessionData', path.join(LOCAL_DIR, 'Session'));
 app.setAppUserModelId(APP_ID);
+// Remote sessions are native child windows inside app windows. With DirectComposition, Chromium draws
+// its content above child windows, which would hide the session.
+app.commandLine.appendSwitch('disable-direct-composition');
 protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 
 let win = null;
 let tray = null;
+let tabs = null;
 let store = null;
 let sessions = null;
 // The policy is read before the app is ready so that network switches can be set from it.
@@ -90,6 +96,14 @@ async function start() {
   sessions.setBackground(startHidden);
   lastFullStatusAt = Date.now(); // the first status check runs with the deferred work below, not on the first "show"
   createWindow();
+  tabs = new TabManager({
+    createWindow: createAppWindow,
+    sessions,
+    getMainWindow: () => win,
+    onDisconnect: (id) => sessions.disconnect(id),
+    showEarly: !app.isPackaged && Boolean(process.env.BP_RDP_DEV_SHOW_EARLY),
+  });
+  if (!app.isPackaged && process.env.BP_RDP_DEV_TABTEST) devTabTest();
   // Everything the first frame does not need starts once the window has painted (or after 3 s at the latest).
   let started = false;
   const startBackgroundWork = () => {
@@ -205,6 +219,36 @@ function createWindow() {
   win.loadURL(`${APP_ORIGIN}index.html`);
   // Development only: never available in the installed app, because it runs script from an environment variable.
   if (!app.isPackaged && process.env.BP_RDP_DEV_CAPTURE) devCapture(process.env.BP_RDP_DEV_CAPTURE);
+}
+
+const APP_WEB_PREFERENCES = () => ({
+  preload: path.join(__dirname, 'preload.js'),
+  contextIsolation: true,
+  nodeIntegration: false,
+  sandbox: true,
+  spellcheck: false,
+  webSecurity: true,
+});
+
+/** Windows besides the main window: "host" holds dragged-out session tabs, "pinbar" is the full-screen bar. */
+function createAppWindow(kind, bounds, parent = null) {
+  if (kind === 'pinbar') {
+    const bar = new BrowserWindow({
+      ...bounds, parent, frame: false, resizable: false, movable: false, minimizable: false, maximizable: false,
+      fullscreenable: false, skipTaskbar: true, alwaysOnTop: true, show: false, backgroundColor: '#1f1f1f',
+      title: 'Session bar', webPreferences: APP_WEB_PREFERENCES(),
+    });
+    bar.setAlwaysOnTop(true, 'screen-saver');
+    bar.loadURL(`${APP_ORIGIN}pinbar.html`);
+    return bar;
+  }
+  const host = new BrowserWindow({
+    ...bounds, minWidth: 480, minHeight: 360, backgroundColor: '#1f1f1f', show: false,
+    title: 'BearingPoint Remote Desktop', icon: path.join(ASSETS_DIR, 'icon.ico'), webPreferences: APP_WEB_PREFERENCES(),
+  });
+  host.setMenu(null);
+  host.loadURL(`${APP_ORIGIN}host.html`);
+  return host;
 }
 
 function showWindow() {
@@ -397,12 +441,15 @@ function assertPersonal(id) {
 // ── IPC ───────────────────────────────────────────────
 function registerIpc() {
   // open: allowed even when access is denied (info screen, help, data folder).
-  const handle = (channel, fn, { open = false } = {}) => ipcMain.handle(channel, async (e, ...args) => {
+  // anyWindow: also from detached tab windows and the full-screen bar; the handler then gets the sender window first.
+  const handle = (channel, fn, { open = false, anyWindow = false } = {}) => ipcMain.handle(channel, async (e, ...args) => {
     const url = e.senderFrame ? e.senderFrame.url : '';
-    if (!win || e.sender !== win.webContents || !url.startsWith(APP_ORIGIN)) return { ok: false, error: 'Untrusted sender.' };
+    const sender = BrowserWindow.fromWebContents(e.sender);
+    const trusted = anyWindow ? Boolean(tabs && tabs.isAppWindow(sender)) : Boolean(win && e.sender === win.webContents);
+    if (!trusted || !url.startsWith(APP_ORIGIN)) return { ok: false, error: 'Untrusted sender.' };
     try {
       if (!open) assertAllowed();
-      return { ok: true, data: await fn(...args) };
+      return { ok: true, data: await (anyWindow ? fn(sender, ...args) : fn(...args)) };
     } catch (err) {
       return { ok: false, error: String((err && err.message) || err) };
     }
@@ -577,7 +624,19 @@ function registerIpc() {
   });
 
   handle('sessions:list', () => sessions.list());
-  handle('sessions:focus', (id) => sessions.focus(id));
+  handle('sessions:focus', (id) => (tabs.has(id) ? tabs.focus(id) : sessions.focus(id)));
+
+  // Session tabs (main window, detached tab windows, full-screen bar)
+  const sessionId = (id) => (typeof id === 'string' && ID_PATTERN.test(id) ? id : null);
+  handle('tabs:layout', (sender, layout) => tabs.setLayout(sender, layout), { anyWindow: true });
+  handle('tabs:activate', (sender, id) => tabs.activate(sender, id === null ? null : sessionId(id)), { anyWindow: true });
+  handle('tabs:dragStart', (sender, id) => sessionId(id) && tabs.dragStart(sender, id), { anyWindow: true });
+  handle('tabs:menu', (sender, id) => sessionId(id) && tabs.menu(sender, id), { anyWindow: true });
+  handle('tabs:fullscreen', (sender, id) => sessionId(id) && tabs.toggleFullscreen(id), { anyWindow: true });
+  handle('tabs:close', (sender, id) => sessionId(id) && sessions.disconnect(id), { anyWindow: true });
+  handle('tabs:state', (sender) => { const h = tabs.hostFor(sender, { create: true }); tabs.push(h); return true; }, { anyWindow: true });
+  handle('pinbar:state', (sender) => tabs.pinbarState(sender), { anyWindow: true });
+  handle('pinbar:action', (sender, action) => ['expand', 'collapse', 'leave', 'dock', 'disconnect'].includes(action) && tabs.pinbarAction(sender, action), { anyWindow: true });
   handle('sessions:disconnect', (id) => sessions.disconnect(id));
   handle('sessions:clearEnded', () => { sessions.clearEnded(); return sessions.list(); });
   handle('sessions:connect', (id, options) => connect(id, options || {}));
@@ -671,6 +730,24 @@ async function connectSteps(id, base, force, overrides, quick) {
   // 4. Start
   progress('start', 'running');
   let session;
+  const embeddedNote = embeddedBlocker(conn, settings);
+  if (!embeddedNote) {
+    try {
+      session = await startEmbedded(conn);
+    } catch (err) {
+      store.audit('embedded_unavailable', { connectionId: id, error: String(err.message || err) });
+    }
+  }
+  if (session) {
+    touchConnection(id, session.startedAt);
+    store.audit('connect_started', {
+      sessionId: session.id, connectionId: id, name: conn.name, host: conn.host, gateway: session.gateway, launchMode: 'embedded',
+      redirect: conn.redirect, credentialProtection: conn.security.credentialProtection,
+    });
+    progress('start', 'done');
+    updateJumpList();
+    return { outcome: 'started', session, credentialSaved: credential.saved };
+  }
   try {
     session = await sessions.start(conn, launch);
   } catch (err) {
@@ -686,6 +763,62 @@ async function connectSteps(id, base, force, overrides, quick) {
   progress('start', 'done');
   updateJumpList();
   return { outcome: 'started', session, credentialSaved: credential.saved && !conn.promptAlways, launchNote: launch.note };
+}
+
+/** Why a connection cannot open as a tab (then it uses a separate Remote Desktop window), or null. */
+function embeddedBlocker(conn, settings) {
+  if (settings.sessionWindow === 'external') return 'settings';
+  if (!helperAvailable(app)) return 'helper missing';
+  if (conn.display && conn.display.multimon) return 'multiple monitors'; // spanning needs mstsc
+  if (conn.promptAlways) return 'different user';
+  return null;
+}
+
+/**
+ * Starts the RDP helper, opens a tab for it and connects. The tab is attached before the connection
+ * starts, so the size is known and Windows sign-in prompts belong to the app window.
+ */
+async function startEmbedded(conn) {
+  const helper = new RdpHost(helperPath(app));
+  try {
+    await helper.whenReady();
+  } catch (err) {
+    helper.kill();
+    throw err;
+  }
+  if (!app.isPackaged && process.env.BP_RDP_DEV_LOG_HELPER) {
+    helper.on('message', (m) => console.log(`[helper] ${JSON.stringify(m)}`));
+    const original = helper.send.bind(helper);
+    helper.send = (cmd, args) => { console.log(`[helper<] ${cmd} ${JSON.stringify(args || {})}`); return original(cmd, args); };
+  }
+  const session = sessions.startEmbedded(conn, helper);
+  tabs.add(session.id, helper);
+  await new Promise((r) => setTimeout(r, 200)); // the window lays out the new tab
+  tabs.syncSession(session.id);
+  const size = tabs.initialSize();
+  const settings = store.getSettings();
+  helper.send('connect', {
+    host: conn.host,
+    port: conn.port || 3389,
+    username: conn.username || undefined,
+    width: size.width,
+    height: size.height,
+    scale: size.scale,
+    authLevel: conn.security.authLevel,
+    adminSession: Boolean(conn.security.adminSession),
+    credentialProtection: conn.security.credentialProtection,
+    clipboard: Boolean(conn.redirect.clipboard),
+    drives: conn.redirect.drives === 'all',
+    printers: Boolean(conn.redirect.printers),
+    smartcards: Boolean(conn.redirect.smartcards),
+    microphone: Boolean(conn.redirect.microphone),
+    audio: conn.redirect.audio,
+    gateway: conn.gateway.mode !== 'none' ? conn.gateway.host : undefined,
+    gatewayMode: conn.gateway.mode,
+    allowCredentialSaving: policy.allowSavedCredentials !== false,
+    keysToRemote: Boolean(settings.keysToRemote),
+  });
+  return session;
 }
 
 /** Web connections open in the default browser. There is no session to track. */
@@ -730,6 +863,7 @@ function startSsh(id, conn, progress) {
 
 function onSessionUpdate(s) {
   send('session:update', s);
+  if (tabs) tabs.onSessionUpdate(s);
   updateTrayMenu();
   const internal = sessions.sessions.get(s.id);
   if (!internal) return;
@@ -755,6 +889,22 @@ function onSessionUpdate(s) {
  * BP_RDP_DEV_ROUTES (separated by ;;) into the folder BP_RDP_DEV_CAPTURE, then quits.
  * A step is a route name (navigates, then captures) or "js:<code>" (runs code in the page).
  */
+/** Development only: moves the first session tab through detach, full screen and dock, logging each step. */
+function devTabTest() {
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const log = (m) => console.log(`[tabtest] ${m}`);
+  (async () => {
+    while (!tabs.helpers.size) await wait(500);
+    const id = [...tabs.helpers.keys()][0];
+    await wait(4000); log('in main window');
+    tabs.detachToNewWindow(id); await wait(4000); log('detached');
+    tabs.toggleFullscreen(id); await wait(4000); log(`fullscreen ${tabs.hostOfSession(id).win.isFullScreen()}`);
+    tabs.toggleFullscreen(id); await wait(3000); log('windowed');
+    tabs.mergeInto(tabs.hostOfSession(id), tabs.mainHost()); await wait(4000); log(`docked, windows=${tabs.hosts.size}`);
+    sessions.disconnect(id); await wait(3000); log(`disconnected, tabs=${tabs.mainHost().tabs.length}`);
+  })().catch((e) => log(`error ${e.message}`));
+}
+
 function devCapture(dir) {
   fs.mkdirSync(dir, { recursive: true });
   win.webContents.on('console-message', ({ level, message, lineNumber, sourceId }) => {

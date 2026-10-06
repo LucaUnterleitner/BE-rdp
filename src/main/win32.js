@@ -270,6 +270,17 @@ function startConsoleProgram(exe, args, { title = '', commandLine = null } = {})
   return { pid: pi.dwProcessId, exited, kill: () => (closed ? false : TerminateProcess(handle, 1)) };
 }
 
+const GetAsyncKeyState = user32.func('int16 __stdcall GetAsyncKeyState(int vKey)');
+const GetSystemMetrics = user32.func('int __stdcall GetSystemMetrics(int index)');
+
+/** True while the primary mouse button is held down (used to follow a tab that is dragged out of a window). */
+function isPrimaryButtonDown() {
+  const VK_LBUTTON = 0x01;
+  const VK_RBUTTON = 0x02;
+  const swapped = GetSystemMetrics(23) !== 0; // SM_SWAPBUTTON
+  return (GetAsyncKeyState(swapped ? VK_RBUTTON : VK_LBUTTON) & 0x8000) !== 0;
+}
+
 /** Brings the console window of a console program (conhost or Windows Terminal) to the foreground. */
 function focusConsoleOf(pid) {
   let hwnd = null;
@@ -285,5 +296,5 @@ function focusConsoleOf(pid) {
 
 module.exports = {
   getCredential, saveCredential, deleteCredential, focusProcessWindow, windowsOfProcess,
-  queryRdpEvents, parseEventXml, isOwnedByAdministrators, startConsoleProgram, focusConsoleOf, quoteArg,
+  queryRdpEvents, parseEventXml, isOwnedByAdministrators, startConsoleProgram, focusConsoleOf, quoteArg, isPrimaryButtonDown,
 };

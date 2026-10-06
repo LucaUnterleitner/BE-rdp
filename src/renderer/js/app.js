@@ -8,6 +8,7 @@ import {
 import {
   setContext, openConnectDialog, runConnect, openEditDialog, importRdpFiles, openCredentialDialog, removeCredential,
 } from './dialogs.js';
+import { mountTabStrip } from './tabstrip.js';
 import { PROTOCOL_LABELS, ENABLED_PROTOCOLS, enabledTargets, describeTarget, defaultPort } from './targets.js';
 
 const state = {
@@ -628,8 +629,16 @@ function viewSettings() {
   const launchLock = p.launchMode ? 'The launch mode is set by IT policy.' : launch.note || '';
   return `<div class="page">${pageHeader('Settings', 'Preferences for this computer. Settings of individual systems are edited on the system.')}
     <form id="settings-form" class="settings" novalidate>
+      <section class="settings-card" aria-labelledby="st-window">
+        <h2 class="settings-card__title" id="st-window">Where sessions open</h2>
+        <fieldset class="radio-group"><legend class="visually-hidden">Session window</legend>
+          <label class="check"><input type="radio" name="sessionWindow" value="tabs" ${s.sessionWindow !== 'external' ? 'checked' : ''}><span class="check__text"><span>As tabs in this app (recommended)</span><span class="check__help">Drag a tab out to open it in its own window, drag it to the top edge of the screen for full screen, and drag it back onto the tab bar to dock it. Ctrl+Alt+Break switches full screen on and off.</span></span></label>
+          <label class="check"><input type="radio" name="sessionWindow" value="external" ${s.sessionWindow === 'external' ? 'checked' : ''}><span class="check__text"><span>In separate Remote Desktop windows</span><span class="check__help">Uses the Windows Remote Desktop client (mstsc). Systems set to use multiple monitors always open this way.</span></span></label>
+        </fieldset>
+        ${check('keysToRemote', s.keysToRemote === true, 'Send Windows key combinations to the remote computer', 'In tabs, keys such as Alt+Tab and the Windows key go to the remote computer instead of this one. In full screen they always do. Press Ctrl+Alt+Left arrow to return the keyboard to the app.')}
+      </section>
       <section class="settings-card" aria-labelledby="st-launch">
-        <h2 class="settings-card__title" id="st-launch">How connections start</h2>
+        <h2 class="settings-card__title" id="st-launch">Separate Remote Desktop windows</h2>
         <p class="settings-card__desc">Since April 2026, Windows asks for confirmation each time a Remote Desktop file is opened, unless the file is signed by a publisher your IT trusts.</p>
         <fieldset class="radio-group" ${launchLock ? 'disabled' : ''}><legend class="visually-hidden">Launch mode</legend>${launchLock ? `<p class="policy-note" style="margin-bottom:8px">${icon('shield', 16)} ${esc(launchLock)}</p>` : ''}
           <label class="check"><input type="radio" name="launchMode" value="file" ${effMode === 'file' ? 'checked' : ''}><span class="check__text"><span>Use a connection file (recommended)</span><span class="check__help">All options apply: username, devices, clipboard, gateway. Windows shows its security confirmation unless the file is signed.</span></span></label>
@@ -703,6 +712,8 @@ function check(name, checked, label, help = '') {
 async function saveSettings(form) {
   const f = form.elements;
   const s = structuredClone(state.settings);
+  s.sessionWindow = f.sessionWindow.value;
+  s.keysToRemote = f.keysToRemote.checked;
   if (!f.launchMode[0].matches(':disabled')) s.launchMode = f.launchMode.value;
   if (!f.signingThumbprint.disabled) s.signingThumbprint = f.signingThumbprint.value.trim();
   s.showConnectDialog = f.showConnectDialog.checked;
@@ -781,6 +792,8 @@ function renderShell() {
             <span class="avatar" aria-hidden="true">${esc(initials(info.displayName))}</span><span class="user-button__name">${esc(info.user)}</span></button>
         </div>
       </header>
+      <div class="tabstrip" id="tabstrip" hidden></div>
+      <div class="session-area" id="session-area" role="tabpanel" aria-label="Remote session" tabindex="-1" hidden></div>
       <div class="shell__body">
         <nav class="sidebar" id="sidebar" aria-label="Main navigation" data-collapsed="${collapsed}">
           <div class="nav">${NAV.map((n) => n === 'sep' ? '<div class="nav__sep" role="separator"></div>'
@@ -791,6 +804,7 @@ function renderShell() {
     </div>`;
 }
 
+let tabStrip = null;
 let renderToken = 0;
 let lastHtml = '';
 let lastPage = '';
@@ -916,6 +930,8 @@ function accessDeniedPage() {
 }
 
 function navigate(name, id = null) {
+  // Leaving a session tab: show the app again (the session keeps running in its tab).
+  if (tabStrip && tabStrip.model.active) window.rdp.tabs.activate(null);
   state.prevRoute = state.route;
   state.route = { name, id };
   if (name === 'settings' || name === 'recent' || name === 'dashboard') refreshAudit();
@@ -1295,6 +1311,12 @@ function handleConnectRequest(id) {
     return;
   }
   renderShell();
+  tabStrip = mountTabStrip({
+    strip: $('#tabstrip'),
+    area: $('#session-area'),
+    showHome: true,
+    onChange: (m) => { $('.shell__body').hidden = Boolean(m.active); },
+  });
   render();
   await data;
   if (state.pendingConnect) {

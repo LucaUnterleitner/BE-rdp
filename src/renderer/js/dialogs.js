@@ -361,6 +361,12 @@ export async function runConnect(conn, overrides, { force = false, quick = false
     return;
   }
 
+  // Started inside the app: the session shows in its tab, which reports progress itself.
+  if (res.session.launchMode === 'embedded') {
+    ctx.upsertSession(res.session);
+    dlg.close();
+    return;
+  }
   // Started: mstsc is open. Wait for the session event.
   sessionId = res.session.id;
   const newer = earlyUpdates.get(sessionId) || ctx.state.sessions.find((x) => x.id === sessionId);

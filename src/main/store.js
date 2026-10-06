@@ -10,7 +10,9 @@ const os = require('node:os');
 const { PROTOCOLS, isHost, isSshUser, defaultPort, webUrl } = require('../renderer/js/targets.js');
 
 const DEFAULT_SETTINGS = {
-  launchMode: 'file',            // 'file' (all settings, Windows security confirmation) | 'direct' (mstsc /v:, no dialog)
+  sessionWindow: 'tabs',         // 'tabs' (sessions inside the app) | 'external' (separate Remote Desktop windows, mstsc.exe)
+  keysToRemote: false,           // in tabs: send Windows key combinations such as Alt+Tab to the remote computer
+  launchMode: 'file',            // external windows: 'file' (all settings, Windows security confirmation) | 'direct' (mstsc /v:, no dialog)
   signingThumbprint: '',         // SHA-256 thumbprint of an internal code-signing certificate for rdpsign
   statusRefreshSeconds: 60,
   confirmDisconnect: true,
@@ -133,6 +135,8 @@ class Store {
     s.statusRefreshSeconds = Math.min(600, Math.max(30, Number(s.statusRefreshSeconds) || 60));
     s.confirmDisconnect = s.confirmDisconnect !== false;
     s.showConnectDialog = s.showConnectDialog !== false;
+    s.sessionWindow = s.sessionWindow === 'external' ? 'external' : 'tabs';
+    s.keysToRemote = s.keysToRemote === true;
     this.settings = s;
     writeJson(this.settingsFile, s);
     return s;
