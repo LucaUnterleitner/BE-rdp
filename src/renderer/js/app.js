@@ -540,7 +540,7 @@ function viewDetails(id) {
         <div class="settings-card">
           <h2 class="settings-card__title">Connection options</h2>
           <dl class="kv" style="margin-top:12px">
-            <dt>Display</dt><dd>${c.display.mode === 'window' ? `Window ${c.display.width} × ${c.display.height}` : 'Full screen'}${c.display.multimon ? ', all monitors' : ''}</dd>
+            <dt>Display</dt><dd>${c.display.multimon ? 'All monitors, separate window' : state.settings.sessionWindow !== 'external' ? 'Tab in the app' : c.display.mode === 'window' ? `Window ${c.display.width} × ${c.display.height}` : 'Full screen'}</dd>
             <dt>Clipboard</dt><dd>${yes(eff('clipboard'))}${by('clipboard')}</dd>
             <dt>Local drives</dt><dd>${yes(eff('drives') === 'all')}${by('drives')}</dd>
             <dt>Printers</dt><dd>${yes(eff('printers'))}${by('printers')}</dd>
@@ -642,9 +642,9 @@ function viewSettings() {
       <section class="settings-card" aria-labelledby="st-new">
         <h2 class="settings-card__title" id="st-new">Defaults for new systems</h2>
         <p class="settings-card__desc">Least-privilege defaults. Each system can override them.</p>
-        <div class="field"><label class="field__label" for="st-mode">Display</label>
+        <div class="field" ${s.sessionWindow !== 'external' ? 'hidden' : ''}><label class="field__label" for="st-mode">Display in separate windows</label>
           <select class="select" id="st-mode" name="defMode"><option value="fullscreen" ${d.display.mode === 'fullscreen' ? 'selected' : ''}>Full screen</option><option value="window" ${d.display.mode === 'window' ? 'selected' : ''}>Window</option></select></div>
-        ${check('defMultimon', d.display.multimon, 'Use multiple monitors')}
+        ${check('defMultimon', d.display.multimon, 'Use all monitors', 'These systems open in a separate Remote Desktop window.')}
         ${check('defClipboard', d.redirect.clipboard, 'Enable clipboard')}
         ${check('defPrinters', d.redirect.printers, 'Redirect printers')}
         ${check('defDrives', d.redirect.drives === 'all', 'Redirect local drives', 'Not recommended as a default.')}

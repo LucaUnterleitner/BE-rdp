@@ -36,7 +36,15 @@ function select(name, value, options, { disabled = false, id = '' } = {}) {
 function uid(p) { return `${p}-${Math.random().toString(36).slice(2, 8)}`; }
 
 // ── Shared option sections ────────────────────────────
+/** Sessions open as tabs (the default): the size follows the tab, full screen is a drag to the top edge. */
+function tabsMode() {
+  return !ctx.state.settings || ctx.state.settings.sessionWindow !== 'external';
+}
+
+const MULTIMON_TABS_HELP = 'The remote desktop spans all monitors. Such a system opens in a separate Remote Desktop window, because a tab covers one monitor.';
+
 function displayHtml(c) {
+  if (tabsMode()) return check('d.multimon', c.display.multimon, 'Use all monitors', MULTIMON_TABS_HELP);
   const d = c.display;
   const res = `${d.width}x${d.height}`;
   const known = RESOLUTIONS.some(([w, h]) => `${w}x${h}` === res);
@@ -98,9 +106,9 @@ function readOptions(form, base) {
     out.display.mode = v('d.mode').value;
     const [w, h] = v('d.res').value.split('x').map(Number);
     out.display.width = w; out.display.height = h;
-    out.display.multimon = v('d.multimon').checked;
     out.display.dynamicResolution = v('d.dynamicResolution').checked;
   }
+  if (v('d.multimon')) out.display.multimon = v('d.multimon').checked;
   if (v('r.clipboard')) {
     out.redirect.clipboard = v('r.clipboard').checked;
     out.redirect.drives = v('r.drives').checked ? 'all' : 'none';
@@ -505,7 +513,8 @@ export function openEditDialog(existing = null) {
   const types = PROTOCOLS.filter((p) => (ENABLED_PROTOCOLS.includes(p) && allowed.includes(p)) || p === c.protocol);
   const ids = Object.fromEntries(['name', 'host', 'port', 'user', 'folder', 'os', 'loc', 'tags', 'desc', 'key', 'jump', 'scheme', 'path', 'detect', 'preview', 'pw'].map((k) => [k, uid(k)]));
   const folders = [...new Set(ctx.state.connections.map((x) => x.folder).filter(Boolean))].sort();
-  const tabs = [['general', 'General'], ['display', 'Display'], ['redirect', 'Devices and clipboard'], ['advanced', 'Gateway and security']];
+  // In tabs mode the Display tab would only hold "Use all monitors", which moves to Advanced settings.
+  const tabs = [['general', 'General'], ...(tabsMode() ? [] : [['display', 'Display']]), ['redirect', 'Devices and clipboard'], ['advanced', 'Gateway and security']];
   const T = TYPE_TEXT[c.protocol];
   const allowSavedPw = (ctx.state.info.policy || {}).allowSavedCredentials !== false && c.source !== 'central';
 
@@ -560,6 +569,7 @@ export function openEditDialog(existing = null) {
         ${allowSavedPw ? `<div class="field" data-for="rdp" ${c.protocol === 'rdp' ? '' : 'hidden'} style="margin-top:12px"><label class="field__label" for="${ids.pw}">Password (optional)</label>
           <input class="input" id="${ids.pw}" name="password" type="password" autocomplete="new-password" placeholder="Saved only in Windows Credential Manager">
           <span class="field__help" data-pw-status>Windows then signs you in automatically. Needs the username above.</span></div>` : ''}
+        ${tabsMode() ? `<div data-for="rdp" ${c.protocol === 'rdp' ? '' : 'hidden'} style="margin-top:8px">${displayHtml(c)}</div>` : ''}
         <div class="field-row" style="margin-top:12px">
           <div class="field"><label class="field__label" for="${ids.folder}">Group</label>
             <input class="input" id="${ids.folder}" name="folder" value="${esc(c.folder)}" list="${ids.folder}-list" placeholder="For example Finance">
@@ -579,7 +589,7 @@ export function openEditDialog(existing = null) {
           <textarea class="textarea" id="${ids.desc}" name="description">${esc(c.description)}</textarea></div>
         </details>
       </div>
-      <div role="tabpanel" id="pane-display" aria-labelledby="tab-display" data-pane="display" hidden>${displayHtml(c)}</div>
+      ${tabsMode() ? '' : `<div role="tabpanel" id="pane-display" aria-labelledby="tab-display" data-pane="display" hidden>${displayHtml(c)}</div>`}
       <div role="tabpanel" id="pane-redirect" aria-labelledby="tab-redirect" data-pane="redirect" hidden>
         <p class="muted" style="margin-bottom:12px">Allow only what you need. Your administrators may restrict these options on the server.</p>${redirectHtml(c)}</div>
       <div role="tabpanel" id="pane-advanced" aria-labelledby="tab-advanced" data-pane="advanced" hidden>${advancedHtml(c)}</div>
@@ -673,7 +683,7 @@ export function openEditDialog(existing = null) {
     }
     const opts = readOptions(form, c);
     if (protocol === 'rdp' && opts.gateway.mode !== 'none' && !opts.gateway.host) {
-      selectTab(tabEls[3]);
+      selectTab(tabEls[tabEls.length - 1]);
       f['g.host'].setAttribute('aria-invalid', 'true');
       f['g.host'].focus();
       return;
