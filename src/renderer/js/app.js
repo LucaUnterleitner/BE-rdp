@@ -566,6 +566,7 @@ function viewDetails(id) {
           <h2 class="settings-card__title">More actions</h2>
           <div class="page__actions" style="margin-top:12px">
             ${protoOf(c) === 'rdp' ? `<button class="btn btn--secondary" type="button" data-action="export" data-id="${esc(c.id)}">${icon('download')} Export .rdp</button>` : ''}
+            ${protoOf(c) === 'rdp' && !c.activeSessionId ? `<button class="btn btn--secondary" type="button" data-action="connect-options" data-id="${esc(c.id)}">${icon('settings')} Connect with options…</button>` : ''}
             <button class="btn btn--secondary" type="button" data-action="duplicate" data-id="${esc(c.id)}">${icon('copy')} Duplicate</button>
             ${c.source === 'central' ? '' : `<button class="btn btn--danger" type="button" data-action="delete" data-id="${esc(c.id)}">${icon('trash')} Remove system</button>`}
           </div>
@@ -647,7 +648,6 @@ function viewSettings() {
         <div class="field" style="margin-top:16px"><label class="field__label" for="st-thumb">Signing certificate thumbprint (SHA-256, optional)</label>
           <input class="input mono" id="st-thumb" name="signingThumbprint" value="${esc(p.signingThumbprint || s.signingThumbprint)}" ${p.signingThumbprint ? 'disabled' : ''} placeholder="Provided by IT" spellcheck="false" autocomplete="off">
           <span class="field__help">When set, connection files are signed with rdpsign.exe. The certificate must be installed on this computer and trusted by Group Policy.</span></div>
-        ${check('showConnectDialog', s.showConnectDialog !== false, 'Show connection options before connecting', 'When off, Connect starts immediately with the saved options of the system.')}
       </section>
       <section class="settings-card" aria-labelledby="st-new">
         <h2 class="settings-card__title" id="st-new">Defaults for new systems</h2>
@@ -716,7 +716,6 @@ async function saveSettings(form) {
   s.keysToRemote = f.keysToRemote.checked;
   if (!f.launchMode[0].matches(':disabled')) s.launchMode = f.launchMode.value;
   if (!f.signingThumbprint.disabled) s.signingThumbprint = f.signingThumbprint.value.trim();
-  s.showConnectDialog = f.showConnectDialog.checked;
   s.statusRefreshSeconds = Number(f.statusRefreshSeconds.value);
   s.confirmDisconnect = f.confirmDisconnect.checked;
   s.keepRunningInTray = f.keepRunningInTray.checked;
@@ -994,6 +993,7 @@ function systemMenu(anchor, c) {
   showMenu(anchor, [
     { label: 'View details', icon: 'info', action: () => navigate('details', c.id) },
     { label: c.activeSessionId ? 'Show session window' : protoOf(c) === 'web' ? 'Open in browser' : 'Connect', icon: c.activeSessionId ? 'window' : protoOf(c) === 'web' ? 'external' : 'connect', action: () => (c.activeSessionId ? focusSession(c.activeSessionId) : openConnectDialog(c)) },
+    ...(protoOf(c) === 'rdp' && !c.activeSessionId ? [{ label: 'Connect with options…', icon: 'settings', action: () => openConnectDialog(c, { withOptions: true }) }] : []),
     { label: 'Edit', icon: 'edit', disabled: c.source === 'central', action: () => openEditDialog(c) },
     { label: 'Duplicate', icon: 'copy', action: () => openEditDialog({ ...c, id: undefined, name: `${c.name} (copy)`, favorite: false, sample: false, lastConnectedAt: null }) },
     ...(protoOf(c) === 'rdp' ? [{ label: 'Export .rdp file', icon: 'download', action: () => exportSystem(c.id) }] : []),
@@ -1129,6 +1129,7 @@ async function handleClick(e) {
   const c = id ? connById(id) : null;
   switch (btn.dataset.action) {
     case 'connect': if (c) openConnectDialog(c); break;
+    case 'connect-options': if (c) openConnectDialog(c, { withOptions: true }); break;
     case 'reconnect': { const rc = connById(btn.dataset.id); if (rc) runConnect(rc, null); else errorDialog('System not found', 'This system was removed from your list.'); break; }
     case 'focus': focusSession(btn.dataset.session); break;
     case 'disconnect': disconnectSession(btn.dataset.session); break;
@@ -1298,7 +1299,7 @@ function handleConnectRequest(id) {
   if (!c) { errorDialog('System not found', 'The system is no longer in your list.'); return; }
   if (c.activeSessionId) { focusSession(c.activeSessionId); return; }
   if (document.querySelector('.overlay')) { toast(`Finish the open dialog, then connect to ${c.name}.`, { kind: 'info' }); return; }
-  openConnectDialog(c, { forceDialog: true });
+  openConnectDialog(c);
 }
 
 (async function start() {

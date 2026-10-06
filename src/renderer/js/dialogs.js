@@ -139,12 +139,16 @@ function showFormError(form, message) {
 }
 
 // ── Connect dialog ────────────────────────────────────
-export async function openConnectDialog(conn, { forceDialog = false } = {}) {
+/**
+ * Connect: starts right away with the saved options of the system. withOptions opens the dialog
+ * to change display, devices or the user for this one connection.
+ */
+export async function openConnectDialog(conn, { withOptions = false } = {}) {
   const running = ctx.state.sessions.find((s) => s.connectionId === conn.id && ['connecting', 'active', 'reconnecting'].includes(s.state));
   if (running) return alreadyConnected(conn, running);
   // SSH asks for sign-in in its terminal and web pages in the browser: nothing to set here.
   if ((conn.protocol || 'rdp') !== 'rdp') return runConnect(conn, null);
-  if (!forceDialog && ctx.state.settings && ctx.state.settings.showConnectDialog === false) return runConnect(conn, null);
+  if (!withOptions) return connectNow(conn);
 
   const userId = uid('user');
   const allowSaved = (ctx.state.info.policy || {}).allowSavedCredentials !== false;
@@ -197,6 +201,86 @@ export async function openConnectDialog(conn, { forceDialog = false } = {}) {
     }
     dlg.close();
     runConnect(conn, overrides);
+  });
+}
+
+/** Connect without a dialog. The first connection to a saved system offers to save a password. */
+async function connectNow(conn) {
+  let target = conn;
+  if (await shouldOfferPassword(conn)) {
+    target = await offerPassword(conn);
+    if (!target) return;
+  }
+  runConnect(target, null);
+}
+
+async function shouldOfferPassword(conn) {
+  if (conn.adhoc || conn.lastConnectedAt) return false;
+  if ((ctx.state.info.policy || {}).allowSavedCredentials === false) return false;
+  try {
+    const cred = await call(window.rdp.credentials.get(conn.id));
+    return !cred.saved;
+  } catch {
+    return false; // Credential Manager not available: just connect
+  }
+}
+
+/**
+ * Asks once whether to save a password. The button says "No thanks" until a password is typed, then "OK".
+ * Resolves with the connection to start (the username may have been filled in), or null when closed.
+ */
+function offerPassword(conn) {
+  return new Promise((resolve) => {
+    const uId = uid('u'); const pId = uid('p');
+    let done = false;
+    const finish = (value) => { if (!done) { done = true; resolve(value); } };
+    const dlg = openDialog({
+      title: `Save a password for ${conn.name}?`,
+      size: 'narrow',
+      body: `<form id="offer-form" novalidate autocomplete="off">
+        <p style="margin-bottom:16px">Then Windows signs you in automatically next time. The password is stored only in Windows Credential Manager on this computer.</p>
+        <div class="field"><label class="field__label" for="${uId}">Username</label>
+          <input class="input" id="${uId}" name="username" value="${esc(conn.username)}" placeholder="DOMAIN\\username" spellcheck="false" ${conn.username ? '' : 'autofocus'}></div>
+        <div class="field" style="margin-top:12px"><label class="field__label" for="${pId}">Password</label>
+          <input class="input" id="${pId}" name="password" type="password" autocomplete="new-password" ${conn.username ? 'autofocus' : ''}>
+          <span class="field__error" data-err hidden></span></div>
+      </form>`,
+      footer: '<button class="btn btn--primary" type="submit" form="offer-form" data-offer>No thanks</button>',
+      onClose: () => finish(null),
+    });
+    const form = $('#offer-form', dlg.el);
+    const btn = $('[data-offer]', dlg.el);
+    form.elements.password.addEventListener('input', () => { btn.textContent = form.elements.password.value ? 'OK' : 'No thanks'; });
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const username = form.elements.username.value.trim();
+      const password = form.elements.password.value;
+      if (!password) { finish(conn); dlg.close(); return; }
+      const err = $('[data-err]', form);
+      if (!username) {
+        err.hidden = false;
+        err.innerHTML = `${icon('xCircle', 16)} Enter the username for this password.`;
+        form.elements.username.focus();
+        return;
+      }
+      btn.disabled = true;
+      try {
+        await call(window.rdp.credentials.save({ id: conn.id, username, password }));
+        form.elements.password.value = '';
+        let next = conn;
+        // Remember the username on the system too, so Windows suggests the right account.
+        if (!conn.username && conn.source !== 'central') {
+          try { next = await call(window.rdp.connections.save({ ...conn, username })); await ctx.reload(); } catch { next = { ...conn, username }; }
+        }
+        toast('Password saved in Windows Credential Manager');
+        finish(next);
+        dlg.close();
+      } catch (ex) {
+        btn.disabled = false;
+        err.hidden = false;
+        err.innerHTML = `${icon('xCircle', 16)} ${esc(ex.message)}`;
+      }
+    });
   });
 }
 
@@ -419,10 +503,11 @@ export function openEditDialog(existing = null) {
   const allowed = (ctx.state.info.policy || {}).allowedProtocols || PROTOCOLS;
   // Only switched-on types are offered; an existing system keeps its own type so it can still be edited.
   const types = PROTOCOLS.filter((p) => (ENABLED_PROTOCOLS.includes(p) && allowed.includes(p)) || p === c.protocol);
-  const ids = Object.fromEntries(['name', 'host', 'port', 'user', 'folder', 'os', 'loc', 'tags', 'desc', 'key', 'jump', 'scheme', 'path', 'detect', 'preview'].map((k) => [k, uid(k)]));
+  const ids = Object.fromEntries(['name', 'host', 'port', 'user', 'folder', 'os', 'loc', 'tags', 'desc', 'key', 'jump', 'scheme', 'path', 'detect', 'preview', 'pw'].map((k) => [k, uid(k)]));
   const folders = [...new Set(ctx.state.connections.map((x) => x.folder).filter(Boolean))].sort();
   const tabs = [['general', 'General'], ['display', 'Display'], ['redirect', 'Devices and clipboard'], ['advanced', 'Gateway and security']];
   const T = TYPE_TEXT[c.protocol];
+  const allowSavedPw = (ctx.state.info.policy || {}).allowSavedCredentials !== false && c.source !== 'central';
 
   const dlg = openDialog({
     title: existing ? `Edit ${existing.name}` : 'Add system',
@@ -472,6 +557,9 @@ export function openEditDialog(existing = null) {
         <p class="small preview-line" id="${ids.preview}" data-preview></p>
         <div class="form-section">${check('favorite', c.favorite, 'Show in favorites')}</div>
         <details class="details form-section" ${c.folder || c.os || c.location || (c.tags || []).length || c.description ? 'open' : ''}><summary>Advanced settings</summary>
+        ${allowSavedPw ? `<div class="field" data-for="rdp" ${c.protocol === 'rdp' ? '' : 'hidden'} style="margin-top:12px"><label class="field__label" for="${ids.pw}">Password (optional)</label>
+          <input class="input" id="${ids.pw}" name="password" type="password" autocomplete="new-password" placeholder="Saved only in Windows Credential Manager">
+          <span class="field__help" data-pw-status>Windows then signs you in automatically. Needs the username above.</span></div>` : ''}
         <div class="field-row" style="margin-top:12px">
           <div class="field"><label class="field__label" for="${ids.folder}">Group</label>
             <input class="input" id="${ids.folder}" name="folder" value="${esc(c.folder)}" list="${ids.folder}-list" placeholder="For example Finance">
@@ -501,6 +589,12 @@ export function openEditDialog(existing = null) {
   });
   const form = $('#edit-form', dlg.el);
   wireDependentFields(form);
+  if (existing && allowSavedPw) {
+    call(window.rdp.credentials.get(existing.id)).then((cred) => {
+      const st = $('[data-pw-status]', form);
+      if (cred.saved && st) st.textContent = `A password for ${cred.username} is saved. Type a new one to replace it.`;
+    }).catch(() => {});
+  }
 
   // Connection type: show only what the type needs; the port follows the type until the user changes it.
   const f0 = form.elements;
@@ -596,11 +690,28 @@ export function openEditDialog(existing = null) {
     };
     // Gateway settings only apply to RDP; a hidden gateway must not block saving other types.
     if (protocol !== 'rdp') payload.gateway = { mode: 'none', host: '' };
+    const password = protocol === 'rdp' && f.password ? f.password.value : '';
+    if (password && !payload.username) {
+      showFormError(form, 'Enter the username that belongs to the password.');
+      f.username.focus();
+      return;
+    }
     try {
       const saved = await call(window.rdp.connections.save(payload));
+      if (password) {
+        try {
+          await call(window.rdp.credentials.save({ id: saved.id, username: payload.username, password }));
+          f.password.value = '';
+        } catch (err) {
+          // The system is saved; only the password failed. Keep the dialog open to say so.
+          await ctx.reload();
+          showFormError(form, `The system was saved, but the password could not be saved: ${err.message}`);
+          return;
+        }
+      }
       dlg.close();
       await ctx.reload();
-      toast(existing ? 'Changes saved' : `${saved.name} added`);
+      toast(existing ? 'Changes saved' : `${saved.name} added${password ? ' with saved password' : ''}`);
     } catch (err) {
       showFormError(form, err.message);
     }
