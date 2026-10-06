@@ -23,6 +23,8 @@ const state = {
   filters: { q: '', protocol: '', status: '', os: '', favorites: false, recent: false },
   view: readPref('view', 'grid'),
   filtersOpen: readPref('filters', 'closed') === 'open',
+  pageTabs: [], // ids of systems whose details are open as tabs
+  homeRoute: { name: 'dashboard', id: null }, // the page shown in the Home tab
   notifications: [],
   unread: 0,
   dismissed: new Set(),
@@ -33,7 +35,6 @@ const NAV = [
   ['systems', 'My systems', 'systems'],
   ['favorites', 'Favorites', 'star'],
   ['recent', 'Recent sessions', 'clock'],
-  ['sessions', 'Active sessions', 'activity'],
   'sep',
   ['settings', 'Settings', 'settings'],
   ['help', 'Help', 'help'],
@@ -422,7 +423,7 @@ function viewDashboard() {
     const favs = sortByName(all.filter((c) => c.favorite));
     const recentEvents = state.audit.filter((e) => ['session_ended', 'connect_blocked'].includes(e.event)).slice(0, 5);
     content = `
-      ${active.length ? `<section class="section" style="margin-top:0" aria-labelledby="h-active"><div class="section__header"><h2 class="section__title" id="h-active">Active sessions</h2><button class="btn btn--ghost btn--small" type="button" data-nav="sessions">View all ${icon('arrowRight', 16)}</button></div>${active.slice(0, 3).map(sessionCard).join('')}</section>` : ''}
+      ${active.length ? `<section class="section" style="margin-top:0" aria-labelledby="h-active"><div class="section__header"><h2 class="section__title" id="h-active">Active sessions</h2></div>${active.slice(0, 3).map(sessionCard).join('')}</section>` : ''}
       ${favs.length ? `<section class="section" ${active.length ? '' : 'style="margin-top:0"'} aria-labelledby="h-fav"><div class="section__header"><h2 class="section__title" id="h-fav">Favorites</h2><span class="section__meta">${favs.length} ${favs.length === 1 ? 'system' : 'systems'}</span></div>${systemsBlock(favs)}</section>` : ''}
       <section class="section" aria-labelledby="h-all"><div class="section__header"><h2 class="section__title" id="h-all">All systems</h2><span class="section__meta">${available} of ${all.length} available</span></div>${systemsBlock(sortByName(all))}</section>
       <section class="section" aria-labelledby="h-recent"><div class="section__header"><h2 class="section__title" id="h-recent">Recent activity</h2>${recentEvents.length ? `<button class="btn btn--ghost btn--small" type="button" data-nav="recent">View all ${icon('arrowRight', 16)}</button>` : ''}</div>
@@ -492,17 +493,6 @@ function viewRecent() {
   const events = state.audit.filter((e) => ['session_ended', 'connect_blocked'].includes(e.event));
   return `<div class="page">${pageHeader('Recent sessions', 'Your connection history on this computer. Stored locally, without passwords.')}
     ${events.length ? historyTable(events.slice(0, 100)) : emptyState({ iconName: 'clock', title: 'No sessions yet', message: 'Sessions you start appear here with their result and duration.' })}</div>`;
-}
-
-function viewSessions() {
-  const live = activeSessions();
-  const ended = state.sessions.filter((s) => !isLive(s.state));
-  return `<div class="page">${pageHeader('Active sessions', 'Sessions started from this app. Each session runs in its own Remote Desktop window.')}
-    <div class="alert alert--info" style="margin-bottom:24px">${icon('info')}<div class="alert__body"><p class="alert__title">Disconnect is not the same as sign out</p>
-      <p class="alert__msg">Disconnect closes the window on this computer. Your session and open programs keep running on the server, and you can reconnect later. To end the session completely, select Sign out inside the remote session.</p></div></div>
-    ${live.length ? live.map(sessionCard).join('') : emptyState({ iconName: 'activity', title: 'No active sessions', message: 'Connect to a system to start a session.', actions: '<button class="btn btn--secondary" type="button" data-nav="dashboard">Go to dashboard</button>' })}
-    ${ended.length ? `<section class="section"><div class="section__header"><h2 class="section__title">Ended in this app session</h2><button class="btn btn--ghost btn--small" type="button" data-action="clear-ended">Clear list</button></div>${ended.map(sessionCard).join('')}</section>` : ''}
-  </div>`;
 }
 
 function viewDetails(id) {
@@ -804,6 +794,26 @@ function renderShell() {
 }
 
 let tabStrip = null;
+
+/** Tells the tab strip which page tabs exist and which one is shown. */
+function syncPageTabs() {
+  if (!tabStrip) return;
+  state.pageTabs = state.pageTabs.filter((id) => connById(id));
+  const pages = state.pageTabs.map((id) => ({ id, title: connById(id).name }));
+  tabStrip.setPages(pages, state.route.name === 'details' ? state.route.id : null);
+}
+
+function closePageTab(id) {
+  const i = state.pageTabs.indexOf(id);
+  if (i < 0) return;
+  state.pageTabs.splice(i, 1);
+  if (state.route.name === 'details' && state.route.id === id) {
+    const next = state.pageTabs[Math.min(i, state.pageTabs.length - 1)];
+    if (next) navigate('details', next); else navigate(state.homeRoute.name, state.homeRoute.id);
+  } else {
+    syncPageTabs();
+  }
+}
 let renderToken = 0;
 let lastHtml = '';
 let lastPage = '';
@@ -828,7 +838,6 @@ async function render({ focus = false } = {}) {
   else if (r.name === 'systems') html = viewSystems();
   else if (r.name === 'favorites') html = viewFavorites();
   else if (r.name === 'recent') html = viewRecent();
-  else if (r.name === 'sessions') html = viewSessions();
   else if (r.name === 'details') html = viewDetails(r.id);
   else if (r.name === 'settings') html = viewSettings();
   else if (r.name === 'help') html = await viewHelp();
@@ -845,13 +854,10 @@ async function render({ focus = false } = {}) {
   lastPage = page;
 
   $$('.nav__item').forEach((b) => {
-    const current = b.dataset.nav === r.name || (r.name === 'details' && b.dataset.nav === 'systems');
+    const current = b.dataset.nav === (r.name === 'details' ? state.homeRoute.name : r.name);
     if (current) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
   });
-  const count = activeSessions().length;
-  const badge = $('[data-active-count]');
-  badge.hidden = !count; badge.textContent = count;
-  badge.setAttribute('aria-label', `${count} active`);
+  syncPageTabs();
   $('#bell .icon-btn__dot').hidden = !state.unread;
   $('#bell').setAttribute('aria-label', state.unread ? `Notifications, ${state.unread} new` : 'Notifications');
 
@@ -931,6 +937,9 @@ function accessDeniedPage() {
 function navigate(name, id = null) {
   // Leaving a session tab: show the app again (the session keeps running in its tab).
   if (tabStrip && tabStrip.model.active) window.rdp.tabs.activate(null);
+  // System details open in their own tab next to Home; other pages are shown in the Home tab.
+  if (name === 'details' && id && !state.pageTabs.includes(id)) state.pageTabs.push(id);
+  if (name !== 'details') state.homeRoute = { name, id };
   state.prevRoute = state.route;
   state.route = { name, id };
   if (name === 'settings' || name === 'recent' || name === 'dashboard') refreshAudit();
@@ -981,10 +990,8 @@ async function deleteSystem(id) {
   try {
     await call(window.rdp.connections.remove(id));
     await loadData();
-    // Stay on the current page; only leave the details page of the system that no longer exists.
-    if (state.route.name === 'details' && state.route.id === id) {
-      navigate(state.prevRoute && state.prevRoute.name !== 'details' ? state.prevRoute.name : 'systems');
-    }
+    // Stay on the current page; only the details tab of the removed system closes.
+    closePageTab(id);
     toast(`${c.name} removed`);
   } catch (err) { errorDialog('The action could not be completed', err.message); }
 }
@@ -1136,7 +1143,7 @@ async function handleClick(e) {
     case 'favorite': toggleFavorite(id); break;
     case 'menu': systemMenu(btn, c); break;
     case 'details': navigate('details', id); break;
-    case 'back': navigate(state.prevRoute && state.prevRoute.name !== 'details' ? state.prevRoute.name : 'systems'); break;
+    case 'back': navigate(state.homeRoute.name, state.homeRoute.id); break;
     case 'edit': openEditDialog(c); break;
     case 'duplicate': openEditDialog({ ...c, id: undefined, name: `${c.name} (copy)`, favorite: false, sample: false, lastConnectedAt: null }); break;
     case 'delete': deleteSystem(id); break;
@@ -1317,6 +1324,9 @@ function handleConnectRequest(id) {
     area: $('#session-area'),
     showHome: true,
     onChange: (m) => { $('.shell__body').hidden = Boolean(m.active); },
+    onHome: () => { if (state.route.name === 'details') navigate(state.homeRoute.name, state.homeRoute.id); },
+    onPage: (id) => navigate('details', id),
+    onPageClose: closePageTab,
   });
   render();
   await data;

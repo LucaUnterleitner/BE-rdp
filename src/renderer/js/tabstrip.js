@@ -10,8 +10,14 @@ const DRAG_THRESHOLD = 24;
 
 const STATE_TEXT = { connecting: 'Connecting', active: 'Connected', reconnecting: 'Reconnecting', ended: 'Ended', failed: 'Failed' };
 
-export function mountTabStrip({ strip, area, showHome = false, onChange = () => {} }) {
+/**
+ * pages (main window only): app pages opened as tabs, for example the details of a system. They live in
+ * the renderer; onHome / onPage / onPageClose let the app show or close them.
+ */
+export function mountTabStrip({ strip, area, showHome = false, onChange = () => {}, onHome = () => {}, onPage = () => {}, onPageClose = () => {} }) {
   let model = { tabs: [], active: null, isMain: showHome, fullscreen: false };
+  let pages = [];
+  let activePage = null;
   let drag = null;
   let suppressClick = false; // set when a pointer gesture became a drag, so its click does not switch tabs
 
@@ -32,14 +38,23 @@ export function mountTabStrip({ strip, area, showHome = false, onChange = () => 
     </div>`;
   }
 
+  function pageHtml(p) {
+    const selected = !model.active && activePage === p.id;
+    return `<div class="stab stab--page ${selected ? 'stab--active' : ''}">
+      <button class="stab__main" type="button" role="tab" aria-selected="${selected}" tabindex="${selected ? 0 : -1}" data-page-id="${esc(p.id)}">${icon('info', 16)}<span class="stab__name">${esc(p.title)}</span></button>
+      <button class="stab__close" type="button" data-page-close="${esc(p.id)}" aria-label="Close ${esc(p.title)}" title="Close">${icon('close', 16)}</button>
+    </div>`;
+  }
+
   function render() {
+    const homeSelected = !model.active && !activePage;
     const home = showHome
-      ? `<div class="stab stab--home ${model.active ? '' : 'stab--active'}"><button class="stab__main" type="button" role="tab" id="stab-home" aria-selected="${!model.active}" tabindex="${model.active ? -1 : 0}" data-tab-home>${icon('dashboard', 16)}<span class="stab__name">Home</span></button></div>`
+      ? `<div class="stab stab--home ${homeSelected ? 'stab--active' : ''}"><button class="stab__main" type="button" role="tab" id="stab-home" aria-selected="${homeSelected}" tabindex="${homeSelected ? 0 : -1}" data-tab-home>${icon('dashboard', 16)}<span class="stab__name">Home</span></button></div>`
       : '';
-    strip.innerHTML = `<div class="tabstrip__tabs" role="tablist" aria-label="Open sessions">${home}${model.tabs.map(tabHtml).join('')}</div>
-      <span class="tabstrip__hint">${showHome && !model.tabs.length ? 'Drag a session tab here to bring it back into the app' : 'Drag a tab out to open it in its own window'}</span>`;
+    strip.innerHTML = `<div class="tabstrip__tabs" role="tablist" aria-label="Open tabs">${home}${pages.map(pageHtml).join('')}${model.tabs.map(tabHtml).join('')}</div>
+      <span class="tabstrip__hint">${model.tabs.length ? 'Drag a session tab out to open it in its own window' : model.elsewhere ? 'Drag a session tab here to bring it back into the app' : ''}</span>`;
     // The main window keeps its tab bar while sessions are open in other windows: it is where they can be docked.
-    strip.hidden = model.fullscreen || (showHome && !model.tabs.length && !model.elsewhere);
+    strip.hidden = model.fullscreen || (showHome && !model.tabs.length && !model.elsewhere && !pages.length);
     const active = model.tabs.find((t) => t.id === model.active);
     area.hidden = !active;
     area.innerHTML = active ? placeholderHtml(active) : '';
@@ -88,7 +103,11 @@ export function mountTabStrip({ strip, area, showHome = false, onChange = () => 
   strip.addEventListener('click', (e) => {
     const close = e.target.closest('[data-tab-close]');
     if (close) { window.rdp.tabs.close(close.dataset.tabClose); return; }
-    if (e.target.closest('[data-tab-home]')) { window.rdp.tabs.activate(null); return; }
+    const pageClose = e.target.closest('[data-page-close]');
+    if (pageClose) { onPageClose(pageClose.dataset.pageClose); return; }
+    if (e.target.closest('[data-tab-home]')) { if (model.active) window.rdp.tabs.activate(null); onHome(); return; }
+    const page = e.target.closest('[data-page-id]');
+    if (page) { if (model.active) window.rdp.tabs.activate(null); onPage(page.dataset.pageId); return; }
     const tab = e.target.closest('[data-tab-id]');
     if (suppressClick) { suppressClick = false; return; }
     if (tab) window.rdp.tabs.activate(tab.dataset.tabId);
@@ -148,5 +167,10 @@ export function mountTabStrip({ strip, area, showHome = false, onChange = () => 
   });
   window.rdp.tabs.state().catch(() => {});
 
-  return { report, get model() { return model; } };
+  return {
+    report,
+    get model() { return model; },
+    /** Page tabs of the app and which one is shown (null: Home). */
+    setPages(list, active) { pages = list; activePage = active; render(); },
+  };
 }
