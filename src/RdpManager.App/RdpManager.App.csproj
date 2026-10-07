@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- WPF shell (views, view models, Windows shell integration) and the RDP session host mode (WinForms AxHost). -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.19041.0</SupportedOSPlatformVersion>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <!-- WPF and WinForms share type names (Application, MessageBox ...): usings are explicit, see GlobalUsings.cs. -->
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>BearingPoint.RemoteDesktop</AssemblyName>
+    <RootNamespace>RdpManager.App</RootNamespace>
+    <StartupObject>RdpManager.App.Program</StartupObject>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\icon.ico</ApplicationIcon>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
+    <!-- Startup performance: precompiled native code (ReadyToRun) for the app and the framework; tiered PGO stays on. -->
+    <!-- Self-contained is set by build.ps1 at publish time (the test project references this exe framework-dependent). -->
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <TieredPGO>true</TieredPGO>
+    <ServerGarbageCollector>false</ServerGarbageCollector>
+    <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
+    <UseSystemResourceKeys>false</UseSystemResourceKeys>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <!-- WFO0003: DPI awareness comes from app.manifest, which WPF needs. -->
+    <NoWarn>$(NoWarn);WFO0003</NoWarn>
+  </PropertyGroup>
+  <!-- App.xaml is compiled as a page (EnableDefaultApplicationDefinition=false), so Program.Main is the only entry point. -->
+  <ItemGroup>
+    <ProjectReference Include="..\RdpManager.Core\RdpManager.Core.csproj" />
+    <ProjectReference Include="..\RdpManager.Infrastructure\RdpManager.Infrastructure.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <Resource Include="Assets\icon.ico" />
+    <Resource Include="Assets\icon-16.png" />
+    <Resource Include="Assets\icon-32.png" />
+    <Resource Include="Assets\icon.png" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="RdpManager.Tests" />
+  </ItemGroup>
+</Project>

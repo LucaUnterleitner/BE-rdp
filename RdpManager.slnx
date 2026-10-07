@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/RdpManager.App/RdpManager.App.csproj" />
+    <Project Path="src/RdpManager.Core/RdpManager.Core.csproj" />
+    <Project Path="src/RdpManager.Infrastructure/RdpManager.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/RdpManager.Tests/RdpManager.Tests.csproj" />
+  </Folder>
+</Solution>

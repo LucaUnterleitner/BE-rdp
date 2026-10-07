@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MSIX manifest of BearingPoint Remote Desktop. build.ps1 replaces $VERSION$ and $PUBLISHER$.
+  - Identity Name and Publisher must stay the same for every release, otherwise Windows does not treat a new
+    package as an upgrade. Publisher must match the subject of the signing certificate exactly.
+  - AppData write virtualization is off: user data lives in the real %APPDATA% / %LOCALAPPDATA% folders, so it
+    survives upgrades and uninstalls and stays where the Electron app's migration expects it.
+-->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap5="http://schemas.microsoft.com/appx/manifest/uap/windows10/5"
+  xmlns:desktop6="http://schemas.microsoft.com/appx/manifest/desktop/windows10/6"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap uap5 desktop6 rescap">
+
+  <Identity Name="BearingPoint.RemoteDesktop" Publisher="$PUBLISHER$" Version="$VERSION$" ProcessorArchitecture="x64" />
+
+  <Properties>
+    <DisplayName>BearingPoint Remote Desktop</DisplayName>
+    <PublisherDisplayName>BearingPoint</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+    <Description>Connect to remote systems over Remote Desktop.</Description>
+    <desktop6:FileSystemWriteVirtualization>disabled</desktop6:FileSystemWriteVirtualization>
+    <desktop6:RegistryWriteVirtualization>disabled</desktop6:RegistryWriteVirtualization>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+
+  <Applications>
+    <Application Id="App" Executable="BearingPoint.RemoteDesktop.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="BearingPoint Remote Desktop"
+        Description="Connect to remote systems over Remote Desktop."
+        BackgroundColor="transparent"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png" />
+      <Extensions>
+        <!-- "Start with Windows" (switched on from the app's settings; off by default). -->
+        <uap5:Extension Category="windows.startupTask" Executable="BearingPoint.RemoteDesktop.exe" EntryPoint="Windows.FullTrustApplication">
+          <uap5:StartupTask TaskId="BearingPointRemoteDesktopStartup" Enabled="false" DisplayName="BearingPoint Remote Desktop" />
+        </uap5:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+    <rescap:Capability Name="unvirtualizedResources" />
+  </Capabilities>
+</Package>

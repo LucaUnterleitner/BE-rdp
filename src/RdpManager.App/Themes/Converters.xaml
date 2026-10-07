@@ -1,0 +1,13 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:cv="clr-namespace:RdpManager.App.Converters">
+  <cv:IconConverter x:Key="Icon"/>
+  <cv:VisibleConverter x:Key="Visible"/>
+  <cv:NotConverter x:Key="Not"/>
+  <cv:EqualsConverter x:Key="Equals"/>
+  <cv:KindBrushConverter x:Key="KindBrush"/>
+  <cv:AlertBrushConverter x:Key="AlertBrush"/>
+  <cv:StepIconConverter x:Key="StepIcon"/>
+  <cv:LastRowRadiusConverter x:Key="LastRowRadius"/>
+  <cv:LastRowBorderConverter x:Key="LastRowBorder"/>
+</ResourceDictionary>

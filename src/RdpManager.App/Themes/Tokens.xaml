@@ -1,0 +1,79 @@
+<!--
+  BearingPoint Remote Desktop: design tokens (same values as src/renderer/styles/theme.css of the Electron app).
+
+  BRAND COLORS ARE PLACEHOLDERS. Replace Brand.Red and Brand.DeepRed with the approved values from the
+  BearingPoint Brand Center before a production release, then re-check the contrast of black text on Brand.Red.
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:po="http://schemas.microsoft.com/winfx/2006/xaml/presentation/options"
+                    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+                    xmlns:sys="clr-namespace:System;assembly=System.Runtime"
+                    mc:Ignorable="po">
+  <!-- Brand (PLACEHOLDER values) -->
+  <Color x:Key="Brand.Red">#E0353B</Color>
+  <Color x:Key="Brand.DeepRed">#7A1A22</Color>
+
+  <!-- Neutral palette -->
+  <Color x:Key="Gray50">#F7F7F7</Color>
+  <Color x:Key="Gray100">#EEEEEE</Color>
+  <Color x:Key="Gray200">#DDDDDD</Color>
+  <Color x:Key="Gray300">#C7C7C7</Color>
+  <Color x:Key="Gray500">#6B6B6B</Color>
+  <Color x:Key="Gray700">#404040</Color>
+  <Color x:Key="Gray900">#171717</Color>
+
+  <SolidColorBrush x:Key="PrimaryBrush" Color="{StaticResource Brand.Red}" po:Freeze="True"/>
+  <SolidColorBrush x:Key="PrimaryHoverBrush" Color="#E65D62" po:Freeze="True"/>
+  <SolidColorBrush x:Key="PrimaryPressedBrush" Color="#EA7C80" po:Freeze="True"/>
+  <SolidColorBrush x:Key="PrimaryDarkBrush" Color="{StaticResource Brand.DeepRed}" po:Freeze="True"/>
+  <SolidColorBrush x:Key="OnPrimaryBrush" Color="#000000" po:Freeze="True"/>
+  <SolidColorBrush x:Key="SelectedBgBrush" Color="#FBF1F1" po:Freeze="True"/>
+  <SolidColorBrush x:Key="FocusBrush" Color="{StaticResource Brand.Red}" po:Freeze="True"/>
+
+  <SolidColorBrush x:Key="BackgroundBrush" Color="{StaticResource Gray50}" po:Freeze="True"/>
+  <SolidColorBrush x:Key="SurfaceBrush" Color="#FFFFFF" po:Freeze="True"/>
+  <SolidColorBrush x:Key="SurfaceMutedBrush" Color="{StaticResource Gray100}" po:Freeze="True"/>
+  <SolidColorBrush x:Key="Gray50Brush" Color="{StaticResource Gray50}" po:Freeze="True"/>
+  <SolidColorBrush x:Key="Gray100Brush" Color="{StaticResource Gray100}" po:Freeze="True"/>
+  <SolidColorBrush x:Key="Gray200Brush" Color="{StaticResource Gray200}" po:Freeze="True"/>
+  <SolidColorBrush x:Key="Gray300Brush" Color="{StaticResource Gray300}" po:Freeze="True"/>
+  <SolidColorBrush x:Key="Gray500Brush" Color="{StaticResource Gray500}" po:Freeze="True"/>
+  <SolidColorBrush x:Key="Gray700Brush" Color="{StaticResource Gray700}" po:Freeze="True"/>
+  <SolidColorBrush x:Key="Gray900Brush" Color="{StaticResource Gray900}" po:Freeze="True"/>
+  <SolidColorBrush x:Key="TextPrimaryBrush" Color="{StaticResource Gray900}" po:Freeze="True"/>
+  <SolidColorBrush x:Key="TextSecondaryBrush" Color="{StaticResource Gray500}" po:Freeze="True"/>
+  <SolidColorBrush x:Key="BorderBrush" Color="{StaticResource Gray200}" po:Freeze="True"/>
+  <SolidColorBrush x:Key="BorderStrongBrush" Color="{StaticResource Gray300}" po:Freeze="True"/>
+
+  <!-- Semantic colors (proposed UI colors, not official brand colors) -->
+  <SolidColorBrush x:Key="SuccessBrush" Color="#217346" po:Freeze="True"/>
+  <SolidColorBrush x:Key="WarningBrush" Color="#9A6700" po:Freeze="True"/>
+  <SolidColorBrush x:Key="ErrorBrush" Color="#B42318" po:Freeze="True"/>
+  <SolidColorBrush x:Key="ErrorHoverBrush" Color="#991E14" po:Freeze="True"/>
+  <SolidColorBrush x:Key="InfoBrush" Color="#175CD3" po:Freeze="True"/>
+  <SolidColorBrush x:Key="SuccessBgBrush" Color="#ECF6F0" po:Freeze="True"/>
+  <SolidColorBrush x:Key="WarningBgBrush" Color="#FDF6E7" po:Freeze="True"/>
+  <SolidColorBrush x:Key="ErrorBgBrush" Color="#FDEEEC" po:Freeze="True"/>
+  <SolidColorBrush x:Key="InfoBgBrush" Color="#EEF4FD" po:Freeze="True"/>
+  <SolidColorBrush x:Key="SuccessBorderBrush" Color="#B5DBC4" po:Freeze="True"/>
+  <SolidColorBrush x:Key="WarningBorderBrush" Color="#ECD49B" po:Freeze="True"/>
+  <SolidColorBrush x:Key="ErrorBorderBrush" Color="#F1B8B2" po:Freeze="True"/>
+  <SolidColorBrush x:Key="InfoBorderBrush" Color="#B8CFF5" po:Freeze="True"/>
+  <SolidColorBrush x:Key="SessionBackgroundBrush" Color="#1F1F1F" po:Freeze="True"/>
+  <SolidColorBrush x:Key="ToastBrush" Color="#171717" po:Freeze="True"/>
+
+  <!-- Typography -->
+  <FontFamily x:Key="UiFont">Aptos, Segoe UI</FontFamily>
+  <FontFamily x:Key="MonoFont">Consolas, Cascadia Mono</FontFamily>
+  <sys:Double x:Key="FontPageTitle">28</sys:Double>
+  <sys:Double x:Key="FontSection">20</sys:Double>
+  <sys:Double x:Key="FontCardTitle">16</sys:Double>
+  <sys:Double x:Key="FontBody">14</sys:Double>
+  <sys:Double x:Key="FontSecondary">13</sys:Double>
+  <sys:Double x:Key="FontLabel">12</sys:Double>
+
+  <CornerRadius x:Key="RadiusSmall">4</CornerRadius>
+  <CornerRadius x:Key="RadiusMedium">8</CornerRadius>
+  <CornerRadius x:Key="RadiusLarge">12</CornerRadius>
+</ResourceDictionary>

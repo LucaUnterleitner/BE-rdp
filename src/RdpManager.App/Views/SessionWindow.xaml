@@ -1,0 +1,19 @@
+<Window x:Class="RdpManager.App.Views.SessionWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:c="clr-namespace:RdpManager.App.Controls"
+        Title="BearingPoint Remote Desktop" MinWidth="480" MinHeight="360" Icon="/Assets/icon.ico"
+        Background="{StaticResource SessionBackgroundBrush}" FontFamily="{StaticResource UiFont}" FontSize="14"
+        WindowStartupLocation="Manual" UseLayoutRounding="True" TextOptions.TextFormattingMode="Display">
+  <Grid>
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+    <c:TabStrip x:Name="Strip"/>
+    <Grid Grid.Row="1">
+      <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" TextElement.Foreground="#F2F2F2">
+        <c:Spinner x:Name="PlaceholderSpinner" Width="20" Height="20" Foreground="#F2F2F2" Margin="0,0,0,8"/>
+        <TextBlock x:Name="PlaceholderTitle" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+      </StackPanel>
+      <c:SessionSlot x:Name="Slot" Visibility="Hidden"/>
+    </Grid>
+  </Grid>
+</Window>

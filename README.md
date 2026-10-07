@@ -1,34 +1,42 @@
 # BearingPoint Remote Desktop
 
-An internal Windows app for managing remote systems and connecting to them over RDP. Sessions open as tabs inside the app, using the Remote Desktop component built into Windows. Separate Remote Desktop windows (`mstsc.exe`) are available as an option.
+Internal Windows app for managing remote systems and connecting to them over RDP. Native WPF app on .NET 10 (x64), distributed as MSIX. It replaces the Electron version 0.4.0 (last Electron commit: `8160f03`).
 
 ## Features
 
-- Sessions as tabs: drag a tab out to get its own window, drag it to the top edge of the screen for full screen, and drag it back onto a tab bar to dock it. Ctrl+Alt+Break toggles full screen.
-- Save systems, mark favorites, search and filter.
-- Quick connect (Ctrl+K): enter a host name or IP address and connect without saving the system.
-- Import `.rdp`, RDCMan and mRemoteNG files.
-- Shows running sessions and recent connections.
-- Passwords are stored only in Windows Credential Manager.
-- IT can configure the app through a policy file (see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)).
+- Sessions as tabs inside the app (Remote Desktop ActiveX control built into Windows). Drag a tab out to its own window, dock it back, use full screen (Ctrl+Alt+Break). Separate Remote Desktop windows (`mstsc.exe`) are available as an option.
+- Save systems, groups, favorites, tags, search and filters, card and list views, recent sessions with results.
+- Quick connect (Ctrl+K) for a host name or IP address without saving it.
+- Import `.rdp`, RDCMan (`.rdg`) and mRemoteNG (`confCons.xml`) files. Export `.rdp` files.
+- Passwords are stored only in Windows Credential Manager (`TERMSRV/<host>`), never by the app.
+- IT control through a policy file: group restriction, device redirection locks, signed central system list, optional Microsoft Entra ID sign-in.
+- Takes over the data of the Electron version automatically on first start, with a backup.
 
-## Development
+## Documentation
 
-Requires Windows and Node.js 22.
+| Document | Content |
+|---|---|
+| [BUILD.md](BUILD.md) | Prerequisites, local development, build, tests |
+| [RELEASE.md](RELEASE.md) | Release build, MSIX, code signing, checksums |
+| [DEPLOYMENT.md](DEPLOYMENT.md) | Intune distribution, updates, IT policy, Entra ID configuration |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Projects, components, design decisions |
+| [MIGRATION.md](MIGRATION.md) | Electron → native migration matrix and user data migration |
+| [SECURITY.md](SECURITY.md) | Security model and controls |
+| [PERFORMANCE.md](PERFORMANCE.md) | Measurements and method |
+
+## Quick start (development)
 
 ```powershell
-npm install
-npm start          # start the app
-npm test           # run the tests
-npm run dist:msi   # build the MSI installer
+dotnet test RdpManager.slnx
+dotnet run --project src\RdpManager.App -- --data-dir C:\temp\bp-rdp-dev
 ```
 
-In the VS Code terminal, unset `ELECTRON_RUN_AS_NODE` before `npm start`.
+`--data-dir` keeps development data separate from your real data (it is ignored in the installed app).
 
-`npm start` and the dist scripts first compile the session helper `native/BpRdpHost.cs` with the C# compiler that ships with Windows (no SDK needed). The helper hosts one Remote Desktop session per process.
+## Known limitations
 
-## Notes
-
-- The brand colors in `src/renderer/styles/theme.css` and the app icon are placeholders.
-- The installer is not code-signed yet.
-- SSH and web connections are implemented but switched off. To enable them, add `ssh` and/or `web` to `ENABLED_PROTOCOLS` in `src/renderer/js/targets.js`.
+- Brand colors (`src/RdpManager.App/Themes/Tokens.xaml`) and the app icon are placeholders.
+- No production code-signing certificate yet: release builds are signed with a self-signed development certificate (see RELEASE.md).
+- SSH and web connections are implemented but switched off (`Protocols.Enabled` in `src/RdpManager.Core/Models/Protocols.cs`), as in the Electron version.
+- Entra ID sign-in is implemented but not tested against a real tenant (no app registration available yet).
+- Startup time is still slower than the Electron version (about 1.1 s versus 0.6 s to a visible window); see PERFORMANCE.md.

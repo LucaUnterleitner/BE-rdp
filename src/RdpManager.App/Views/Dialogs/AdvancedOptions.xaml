@@ -1,0 +1,27 @@
+<UserControl x:Class="RdpManager.App.Views.Dialogs.AdvancedOptions"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:RdpManager.App.ViewModels">
+  <StackPanel>
+    <Grid>
+      <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="16"/><ColumnDefinition/></Grid.ColumnDefinitions>
+      <StackPanel>
+        <TextBlock Text="RD Gateway" Style="{StaticResource Text.Label}"/>
+        <ComboBox ItemsSource="{x:Static vm:OptionsViewModel.GatewayChoices}" DisplayMemberPath="Value" SelectedValuePath="Key" SelectedValue="{Binding GatewayMode}" AutomationProperties.Name="RD Gateway"/>
+      </StackPanel>
+      <StackPanel Grid.Column="2" Visibility="{Binding UsesGateway, Converter={StaticResource Visible}}">
+        <TextBlock Text="Gateway address" Style="{StaticResource Text.Label}"/>
+        <TextBox x:Name="GatewayHost" Style="{StaticResource Input.Mono}" Text="{Binding GatewayHost, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Gateway address"/>
+        <TextBlock Text="{Binding GatewayError}" Foreground="{StaticResource ErrorBrush}" FontSize="13" Margin="0,4,0,0" TextWrapping="Wrap" Visibility="{Binding HasGatewayError, Converter={StaticResource Visible}}"/>
+      </StackPanel>
+    </Grid>
+    <TextBlock Text="Protect my credentials" Style="{StaticResource Text.Label}" Margin="0,16,0,4"/>
+    <ComboBox ItemsSource="{x:Static vm:OptionsViewModel.ProtectionOptions}" DisplayMemberPath="Value" SelectedValuePath="Key" SelectedValue="{Binding CredentialProtection}" AutomationProperties.Name="Protect my credentials"/>
+    <TextBlock Style="{StaticResource Text.Help}" Text="{Binding ProtectionHelp}"/>
+    <TextBlock Text="If the identity of the remote system cannot be verified" Style="{StaticResource Text.Label}" Margin="0,16,0,4"/>
+    <ComboBox ItemsSource="{x:Static vm:OptionsViewModel.AuthOptions}" DisplayMemberPath="Value" SelectedValuePath="Key" SelectedValue="{Binding AuthLevel}" AutomationProperties.Name="Server identity check"/>
+    <CheckBox IsChecked="{Binding AdminSession}" Margin="0,8,0,0">
+      <StackPanel><TextBlock Text="Connect to the administrative (console) session"/><TextBlock Style="{StaticResource Text.Help}" Text="For server administration only."/></StackPanel>
+    </CheckBox>
+  </StackPanel>
+</UserControl>

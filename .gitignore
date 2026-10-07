@@ -1,5 +1,7 @@
-node_modules/
-dist/
-*.log
-resources/bin/
-dist-release/
+bin/
+obj/
+artifacts/
+*.user
+.vs/
+.claude/settings.local.json
+release/

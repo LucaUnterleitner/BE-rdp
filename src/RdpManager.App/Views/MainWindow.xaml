@@ -1,0 +1,229 @@
+<Window x:Class="RdpManager.App.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:c="clr-namespace:RdpManager.App.Controls"
+        xmlns:v="clr-namespace:RdpManager.App.Views"
+        xmlns:vm="clr-namespace:RdpManager.App.ViewModels"
+        xmlns:sv="clr-namespace:RdpManager.App.Services"
+        Title="BearingPoint Remote Desktop" Width="1400" Height="900" MinWidth="960" MinHeight="640"
+        Background="{StaticResource BackgroundBrush}" FontFamily="{StaticResource UiFont}" FontSize="14"
+        Foreground="{StaticResource TextPrimaryBrush}" Icon="/Assets/icon.ico" UseLayoutRounding="True"
+        TextOptions.TextFormattingMode="Display">
+  <Window.Resources>
+    <DataTemplate DataType="{x:Type vm:DashboardPageViewModel}"><v:ListPageView/></DataTemplate>
+    <DataTemplate DataType="{x:Type vm:SystemsPageViewModel}"><v:ListPageView/></DataTemplate>
+    <DataTemplate DataType="{x:Type vm:FavoritesPageViewModel}"><v:ListPageView/></DataTemplate>
+    <DataTemplate DataType="{x:Type vm:RecentPageViewModel}"><v:ListPageView/></DataTemplate>
+    <DataTemplate DataType="{x:Type vm:DetailsPageViewModel}"><v:DetailsView/></DataTemplate>
+    <DataTemplate DataType="{x:Type vm:SettingsPageViewModel}"><v:SettingsView/></DataTemplate>
+    <DataTemplate DataType="{x:Type vm:HelpPageViewModel}"><v:HelpView/></DataTemplate>
+
+    <DataTemplate DataType="{x:Type vm:AccessDeniedPageViewModel}">
+      <Border Style="{StaticResource Card}" MaxWidth="640" Margin="32,48" Padding="32" VerticalAlignment="Top">
+        <StackPanel>
+          <c:Icon Data="{StaticResource Icon.shield}" Size="24" Foreground="{StaticResource Gray500Brush}" HorizontalAlignment="Left" Margin="0,0,0,12"/>
+          <TextBlock Text="Access denied" Style="{StaticResource Text.PageTitle}"/>
+          <TextBlock Text="{Binding Reason}" Style="{StaticResource Text.Secondary}" FontSize="14" Margin="0,8,0,0"/>
+          <TextBlock Text="{Binding SignedInAs}" Margin="0,16,0,0" TextWrapping="Wrap"/>
+          <TextBlock Text="{Binding Request}" Style="{StaticResource Text.Secondary}" FontSize="14" Margin="0,8,0,0"/>
+          <StackPanel Orientation="Horizontal" Margin="0,24,0,0">
+            <Button Style="{StaticResource Btn.Primary}" Content="Request access" Margin="0,0,8,0" Visibility="{Binding HasHelpUrl, Converter={StaticResource Visible}}" Command="{Binding Main.OpenHelpUrlCommand}"/>
+            <Button Style="{StaticResource Btn.Secondary}" Content="Help" Command="{Binding Main.NavigateCommand}" CommandParameter="help"/>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type vm:SignInPageViewModel}">
+      <Border Style="{StaticResource Card}" MaxWidth="640" Margin="32,48" Padding="32" VerticalAlignment="Top">
+        <StackPanel>
+          <c:Icon Data="{StaticResource Icon.user}" Size="24" Foreground="{StaticResource Gray500Brush}" HorizontalAlignment="Left" Margin="0,0,0,12"/>
+          <TextBlock Text="Sign in to continue" Style="{StaticResource Text.PageTitle}"/>
+          <TextBlock Text="{Binding Message}" Style="{StaticResource Text.Secondary}" FontSize="14" Margin="0,8,0,0"/>
+          <StackPanel Orientation="Horizontal" Margin="0,24,0,0">
+            <Button Style="{StaticResource Btn.Primary}" Content="Sign in with Microsoft" Margin="0,0,8,0" Command="{Binding Main.SignInCommand}"/>
+            <Button Style="{StaticResource Btn.Secondary}" Content="Help" Command="{Binding Main.NavigateCommand}" CommandParameter="help"/>
+          </StackPanel>
+        </StackPanel>
+      </Border>
+    </DataTemplate>
+
+    <DataTemplate DataType="{x:Type vm:ErrorPageViewModel}">
+      <StackPanel Margin="32" MaxWidth="1440">
+        <TextBlock Text="{Binding Title}" Style="{StaticResource Text.PageTitle}" Margin="0,0,0,24"/>
+        <Border Padding="16" CornerRadius="8" BorderThickness="1" Background="{StaticResource ErrorBgBrush}" BorderBrush="{StaticResource ErrorBorderBrush}">
+          <DockPanel>
+            <c:Icon DockPanel.Dock="Left" Data="{StaticResource Icon.xCircle}" Foreground="{StaticResource ErrorBrush}" VerticalAlignment="Top" Margin="0,0,12,0"/>
+            <StackPanel>
+              <TextBlock FontWeight="SemiBold"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Text" Value="Your systems could not be loaded"/><Style.Triggers><DataTrigger Binding="{Binding Corrupt}" Value="True"><Setter Property="Text" Value="The file with your systems is damaged"/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock>
+              <TextBlock TextWrapping="Wrap" Foreground="{StaticResource Gray700Brush}" Margin="0,2,0,0"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Text" Value="The local data could not be read. Your remote sessions are not affected. Trying again is safe."/><Style.Triggers><DataTrigger Binding="{Binding Corrupt}" Value="True"><Setter Property="Text" Value="A copy of the damaged file was kept, so IT can try to recover it. You can start with an empty list and import or add your systems again. Your remote sessions are not affected."/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock>
+              <Expander Header="Technical details" Margin="0,8,0,0"><TextBox Text="{Binding Message, Mode=OneWay}" IsReadOnly="True" Style="{StaticResource Input.Mono}" TextWrapping="Wrap"/></Expander>
+              <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                <Button Style="{StaticResource Btn.Primary}" Content="Start with an empty list" Margin="0,0,8,0" Command="{Binding Main.StartEmptyCommand}" Visibility="{Binding Corrupt, Converter={StaticResource Visible}}"/>
+                <Button Style="{StaticResource Btn.Secondary}" Content="Open data folder" Command="{Binding Main.OpenDataFolderCommand}" Visibility="{Binding Corrupt, Converter={StaticResource Visible}}"/>
+                <Button Style="{StaticResource Btn.Primary}" Content="Try again" Command="{Binding Main.RetryLoadCommand}" Visibility="{Binding Corrupt, Converter={StaticResource Visible}, ConverterParameter=invert}"/>
+              </StackPanel>
+            </StackPanel>
+          </DockPanel>
+        </Border>
+      </StackPanel>
+    </DataTemplate>
+  </Window.Resources>
+
+  <Window.InputBindings>
+    <KeyBinding Key="K" Modifiers="Control" Command="{Binding QuickConnectCommand}"/>
+    <KeyBinding Key="N" Modifiers="Control" Command="{Binding AddCommand}"/>
+  </Window.InputBindings>
+
+  <Grid x:Name="Shell">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/>
+    </Grid.RowDefinitions>
+
+    <!-- Top bar -->
+    <Border x:Name="TopBar" Height="64" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1" Padding="16,0,24,0">
+      <DockPanel>
+        <Button DockPanel.Dock="Left" Style="{StaticResource IconButton}" Command="{Binding ToggleSidebarCommand}" ToolTip="Collapse or expand navigation" AutomationProperties.Name="Toggle navigation">
+          <c:Icon Data="{StaticResource Icon.panel}"/>
+        </Button>
+        <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" Margin="16,0,0,0" VerticalAlignment="Center">
+          <!-- Placeholder for the approved BearingPoint logo asset -->
+          <Border Width="32" Height="32" CornerRadius="4" Background="{StaticResource Gray900Brush}">
+            <TextBlock Text="BP" Foreground="White" FontSize="12" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+          </Border>
+          <TextBlock Text="BearingPoint" FontWeight="SemiBold" Margin="12,0,0,0" VerticalAlignment="Center"/>
+          <Rectangle Width="1" Height="24" Fill="{StaticResource BorderBrush}" Margin="12,0"/>
+          <TextBlock Text="Remote Desktop" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center"/>
+          <Border Style="{StaticResource Badge}" Margin="12,0,0,0"><TextBlock Text="Internal"/></Border>
+        </StackPanel>
+        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+          <Button x:Name="QuickButton" Height="36" MinWidth="240" Margin="0,0,16,0" Cursor="Hand" Command="{Binding QuickConnectCommand}" FocusVisualStyle="{StaticResource FocusVisual}"
+                  Visibility="{Binding CanQuickConnect, Converter={StaticResource Visible}}" AutomationProperties.Name="Connect to host or IP (Ctrl+K)">
+            <Button.Template>
+              <ControlTemplate TargetType="Button">
+                <Border x:Name="Bd" Background="{StaticResource Gray50Brush}" BorderBrush="{StaticResource BorderStrongBrush}" BorderThickness="1" CornerRadius="4" Padding="12,0,8,0">
+                  <DockPanel TextElement.Foreground="{StaticResource Gray700Brush}">
+                    <Border DockPanel.Dock="Right" BorderBrush="{StaticResource BorderStrongBrush}" BorderThickness="1,1,1,2" CornerRadius="4" Padding="6,0" VerticalAlignment="Center" Background="{StaticResource SurfaceBrush}">
+                      <TextBlock Text="Ctrl K" FontSize="12" FontWeight="SemiBold"/>
+                    </Border>
+                    <c:Icon Data="{StaticResource Icon.search}" Size="16" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                    <TextBlock Text="Connect to host or IP…" VerticalAlignment="Center"/>
+                  </DockPanel>
+                </Border>
+                <ControlTemplate.Triggers>
+                  <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource Gray500Brush}"/></Trigger>
+                </ControlTemplate.Triggers>
+              </ControlTemplate>
+            </Button.Template>
+          </Button>
+          <Button Style="{StaticResource IconButton}" Command="{Binding NotificationsCommand}" ToolTip="Notifications" AutomationProperties.Name="Notifications">
+            <Grid>
+              <c:Icon Data="{StaticResource Icon.bell}"/>
+              <Ellipse Width="8" Height="8" Fill="{StaticResource PrimaryBrush}" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-2,-2,0" Visibility="{Binding HasUnread, Converter={StaticResource Visible}}"/>
+            </Grid>
+          </Button>
+          <Button Style="{StaticResource IconButton}" Command="{Binding NavigateCommand}" CommandParameter="help" ToolTip="Help" AutomationProperties.Name="Help">
+            <c:Icon Data="{StaticResource Icon.help}"/>
+          </Button>
+          <Button x:Name="UserButton" Margin="4,0,0,0" Height="40" Cursor="Hand" Command="{Binding UserMenuCommand}" CommandParameter="{Binding RelativeSource={RelativeSource Self}}"
+                  FocusVisualStyle="{StaticResource FocusVisual}" AutomationProperties.Name="User menu">
+            <Button.Template>
+              <ControlTemplate TargetType="Button">
+                <Border x:Name="Bd" Background="Transparent" CornerRadius="4" Padding="4,0,8,0">
+                  <StackPanel Orientation="Horizontal">
+                    <Border Width="32" Height="32" CornerRadius="16" Background="{StaticResource SurfaceMutedBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+                      <TextBlock Text="{Binding Initials}" FontSize="12" FontWeight="SemiBold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <TextBlock Text="{Binding User}" Margin="8,0,0,0" VerticalAlignment="Center" MaxWidth="200" TextTrimming="CharacterEllipsis"/>
+                  </StackPanel>
+                </Border>
+                <ControlTemplate.Triggers>
+                  <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Bd" Property="Background" Value="{StaticResource SurfaceMutedBrush}"/></Trigger>
+                </ControlTemplate.Triggers>
+              </ControlTemplate>
+            </Button.Template>
+          </Button>
+        </StackPanel>
+        <Border/>
+      </DockPanel>
+    </Border>
+
+    <!-- Tabs -->
+    <c:TabStrip x:Name="Strip" Grid.Row="1" Visibility="{Binding ShowTabStrip, Converter={StaticResource Visible}}"/>
+
+    <!-- App body -->
+    <Grid x:Name="Body" Grid.Row="2">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="Auto"/>
+        <ColumnDefinition Width="*"/>
+      </Grid.ColumnDefinitions>
+      <Border x:Name="Sidebar" Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0" Padding="12,16" Width="240">
+        <StackPanel x:Name="Nav" KeyboardNavigation.DirectionalNavigation="Cycle">
+          <RadioButton Style="{StaticResource NavItem}" Tag="dashboard" Checked="OnNav" ToolTip="Dashboard"><StackPanel Orientation="Horizontal"><c:Icon Data="{StaticResource Icon.dashboard}"/><TextBlock Text="Dashboard" Margin="12,0,0,0" Tag="label"/></StackPanel></RadioButton>
+          <RadioButton Style="{StaticResource NavItem}" Tag="systems" Checked="OnNav" ToolTip="My systems"><StackPanel Orientation="Horizontal"><c:Icon Data="{StaticResource Icon.systems}"/><TextBlock Text="My systems" Margin="12,0,0,0" Tag="label"/></StackPanel></RadioButton>
+          <RadioButton Style="{StaticResource NavItem}" Tag="favorites" Checked="OnNav" ToolTip="Favorites"><StackPanel Orientation="Horizontal"><c:Icon Data="{StaticResource Icon.star}"/><TextBlock Text="Favorites" Margin="12,0,0,0" Tag="label"/></StackPanel></RadioButton>
+          <RadioButton Style="{StaticResource NavItem}" Tag="recent" Checked="OnNav" ToolTip="Recent sessions"><StackPanel Orientation="Horizontal"><c:Icon Data="{StaticResource Icon.clock}"/><TextBlock Text="Recent sessions" Margin="12,0,0,0" Tag="label"/></StackPanel></RadioButton>
+          <Rectangle Height="1" Fill="{StaticResource BorderBrush}" Margin="12"/>
+          <RadioButton Style="{StaticResource NavItem}" Tag="settings" Checked="OnNav" ToolTip="Settings"><StackPanel Orientation="Horizontal"><c:Icon Data="{StaticResource Icon.settings}"/><TextBlock Text="Settings" Margin="12,0,0,0" Tag="label"/></StackPanel></RadioButton>
+          <RadioButton Style="{StaticResource NavItem}" Tag="help" Checked="OnNav" ToolTip="Help"><StackPanel Orientation="Horizontal"><c:Icon Data="{StaticResource Icon.help}"/><TextBlock Text="Help" Margin="12,0,0,0" Tag="label"/></StackPanel></RadioButton>
+        </StackPanel>
+      </Border>
+
+      <Grid Grid.Column="1">
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+        <!-- Global banners (offline/VPN, IT list, update) -->
+        <ItemsControl ItemsSource="{Binding Banners}" Focusable="False" Margin="0,24,0,0" Visibility="{Binding Banners.Count, Converter={StaticResource Visible}}">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate DataType="vm:MainViewModel+Banner">
+              <Border MaxWidth="1440" Margin="32,0,32,12" Padding="16" CornerRadius="8" BorderThickness="1"
+                      Background="{Binding Kind, Converter={StaticResource AlertBrush}}" BorderBrush="{Binding Kind, Converter={StaticResource AlertBrush}, ConverterParameter=border}">
+                <DockPanel>
+                  <c:Icon DockPanel.Dock="Left" Data="{Binding Icon, Converter={StaticResource Icon}}" Foreground="{Binding Kind, Converter={StaticResource KindBrush}}" VerticalAlignment="Top" Margin="0,0,12,0"/>
+                  <Button DockPanel.Dock="Right" Style="{StaticResource IconButton.Small}" VerticalAlignment="Top" Margin="0,-6,-6,0" ToolTip="Dismiss" AutomationProperties.Name="Dismiss"
+                          Visibility="{Binding DismissKey, Converter={StaticResource Visible}}" Command="{Binding DismissCommand, Source={x:Static vm:MainViewModel.Instance}}" CommandParameter="{Binding DismissKey}">
+                    <c:Icon Data="{StaticResource Icon.close}" Size="16"/>
+                  </Button>
+                  <StackPanel>
+                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding Message}" Foreground="{StaticResource Gray700Brush}" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                    <Button Style="{StaticResource Btn.Secondary.Small}" HorizontalAlignment="Left" Margin="0,8,0,0" Content="{Binding ActionText}" Command="{Binding Action}" Visibility="{Binding ActionText, Converter={StaticResource Visible}}"/>
+                  </StackPanel>
+                </DockPanel>
+              </Border>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <ContentControl Grid.Row="1" Content="{Binding CurrentPage}" Focusable="False"/>
+      </Grid>
+
+      <!-- Toasts: completed background actions only -->
+      <ItemsControl Grid.Column="1" ItemsSource="{Binding Toasts.Items}" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="24" Focusable="False">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate DataType="sv:Toast">
+            <Border Background="{StaticResource ToastBrush}" CornerRadius="8" Padding="16,10,8,10" Margin="0,8,0,0" MinWidth="280" MaxWidth="420" TextElement.Foreground="White">
+              <DockPanel>
+                <c:Icon DockPanel.Dock="Left" Data="{Binding Icon, Converter={StaticResource Icon}}" Foreground="White" Margin="0,0,12,0" VerticalAlignment="Center"/>
+                <Button DockPanel.Dock="Right" Style="{StaticResource IconButton.Small}" Foreground="White" Command="{Binding DismissCommand}" AutomationProperties.Name="Dismiss notification">
+                  <c:Icon Data="{StaticResource Icon.close}" Size="16" Foreground="White"/>
+                </Button>
+                <TextBlock Text="{Binding Message}" TextWrapping="Wrap" VerticalAlignment="Center" AutomationProperties.LiveSetting="Polite"/>
+              </DockPanel>
+            </Border>
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </Grid>
+
+    <!-- Session area: the remote desktop is a native child window inside the slot. -->
+    <Grid x:Name="SessionArea" Grid.Row="2" Background="{StaticResource SessionBackgroundBrush}" Visibility="Collapsed">
+      <StackPanel x:Name="Placeholder" HorizontalAlignment="Center" VerticalAlignment="Center" TextElement.Foreground="#F2F2F2">
+        <c:Spinner Width="20" Height="20" HorizontalAlignment="Center" Margin="0,0,0,8" Foreground="#F2F2F2" x:Name="PlaceholderSpinner"/>
+        <TextBlock x:Name="PlaceholderTitle" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+        <TextBlock x:Name="PlaceholderMessage" FontSize="13" Foreground="#C8C8C8" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+      </StackPanel>
+      <c:SessionSlot x:Name="Slot" Visibility="Hidden"/>
+    </Grid>
+  </Grid>
+</Window>

@@ -1,0 +1,143 @@
+<UserControl x:Class="RdpManager.App.Views.Dialogs.EditSystemView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:RdpManager.App.Controls"
+             xmlns:d="clr-namespace:RdpManager.App.Views.Dialogs">
+  <StackPanel>
+    <Border Padding="16" Margin="0,0,0,16" CornerRadius="8" BorderThickness="1" Background="{StaticResource ErrorBgBrush}" BorderBrush="{StaticResource ErrorBorderBrush}"
+            Visibility="{Binding HasFormError, Converter={StaticResource Visible}}">
+      <DockPanel>
+        <c:Icon DockPanel.Dock="Left" Data="{StaticResource Icon.xCircle}" Foreground="{StaticResource ErrorBrush}" Margin="0,0,12,0" VerticalAlignment="Top"/>
+        <StackPanel><TextBlock Text="The system could not be saved" FontWeight="SemiBold"/><TextBlock Text="{Binding FormError}" TextWrapping="Wrap" Foreground="{StaticResource Gray700Brush}"/></StackPanel>
+      </DockPanel>
+    </Border>
+
+    <StackPanel Visibility="{Binding ShowTypes, Converter={StaticResource Visible}}" Margin="0,0,0,8">
+      <TextBlock Text="Connection type" Style="{StaticResource Text.Label}"/>
+      <StackPanel Orientation="Horizontal">
+        <RadioButton GroupName="type" Content="Remote Desktop" Margin="0,0,16,0" IsChecked="{Binding Protocol, Converter={StaticResource Equals}, ConverterParameter=rdp}" x:Name="TypeRdp"/>
+        <RadioButton GroupName="type" Content="SSH" Margin="0,0,16,0" IsChecked="{Binding Protocol, Converter={StaticResource Equals}, ConverterParameter=ssh}" x:Name="TypeSsh"/>
+        <RadioButton GroupName="type" Content="Web" IsChecked="{Binding Protocol, Converter={StaticResource Equals}, ConverterParameter=web}" x:Name="TypeWeb"/>
+      </StackPanel>
+    </StackPanel>
+    <TextBlock Text="{Binding Detected}" Style="{StaticResource Text.Secondary}" Margin="0,0,0,8" Visibility="{Binding Detected, Converter={StaticResource Visible}}"/>
+
+    <TabControl x:Name="Tabs">
+      <TabItem Header="General" x:Name="GeneralTab">
+        <StackPanel>
+          <Grid>
+            <Grid.ColumnDefinitions><ColumnDefinition Width="3*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+            <StackPanel>
+              <TextBlock Text="{Binding HostLabel}" Style="{StaticResource Text.Label}"/>
+              <Grid>
+                <TextBox x:Name="HostInput" Style="{StaticResource Input.Mono}" Text="{Binding Host, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Computer name or IP address"/>
+                <TextBlock Text="{Binding HostPlaceholder}" Foreground="{StaticResource Gray500Brush}" FontFamily="{StaticResource MonoFont}" Margin="12,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False"
+                           Visibility="{Binding Text, ElementName=HostInput, Converter={StaticResource Visible}, ConverterParameter=invert}"/>
+              </Grid>
+              <TextBlock Text="{Binding HostError}" Foreground="{StaticResource ErrorBrush}" FontSize="13" Margin="0,4,0,0" Visibility="{Binding HasHostError, Converter={StaticResource Visible}}"/>
+            </StackPanel>
+            <StackPanel Grid.Column="2">
+              <TextBlock Text="Port" Style="{StaticResource Text.Label}"/>
+              <TextBox Text="{Binding Port, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Port" PreviewTextInput="OnPortInput"/>
+            </StackPanel>
+          </Grid>
+          <Grid Margin="0,16,0,0" Visibility="{Binding IsWeb, Converter={StaticResource Visible}}">
+            <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="16"/><ColumnDefinition/></Grid.ColumnDefinitions>
+            <StackPanel>
+              <TextBlock Text="Protocol" Style="{StaticResource Text.Label}"/>
+              <ComboBox SelectedValuePath="Tag" SelectedValue="{Binding Scheme}">
+                <ComboBoxItem Tag="https" Content="HTTPS (recommended)"/><ComboBoxItem Tag="http" Content="HTTP (not encrypted)"/>
+              </ComboBox>
+            </StackPanel>
+            <StackPanel Grid.Column="2">
+              <TextBlock Text="Path (optional)" Style="{StaticResource Text.Label}"/>
+              <TextBox Style="{StaticResource Input.Mono}" Text="{Binding WebPath, UpdateSourceTrigger=PropertyChanged}"/>
+            </StackPanel>
+          </Grid>
+          <Grid Margin="0,16,0,0">
+            <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="16"/><ColumnDefinition/></Grid.ColumnDefinitions>
+            <StackPanel>
+              <TextBlock Text="Display name" Style="{StaticResource Text.Label}"/>
+              <TextBox Text="{Binding Name}" AutomationProperties.Name="Display name"/>
+            </StackPanel>
+            <StackPanel Grid.Column="2" Visibility="{Binding NotWeb, Converter={StaticResource Visible}}">
+              <TextBlock Text="Username" Style="{StaticResource Text.Label}"/>
+              <Grid>
+                <TextBox x:Name="UserBox" Text="{Binding Username, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Username"/>
+                <TextBlock Text="{Binding UserPlaceholder}" Foreground="{StaticResource Gray500Brush}" Margin="12,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False"
+                           Visibility="{Binding Text, ElementName=UserBox, Converter={StaticResource Visible}, ConverterParameter=invert}"/>
+              </Grid>
+            </StackPanel>
+          </Grid>
+          <StackPanel Visibility="{Binding IsSsh, Converter={StaticResource Visible}}" Margin="0,12,0,0">
+            <TextBlock Style="{StaticResource Text.Secondary}" Text="SSH opens in a terminal window. The password is asked there and never stored by the app."/>
+            <Expander Header="SSH options" Margin="0,8,0,0">
+              <Grid Margin="0,8,0,0">
+                <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="16"/><ColumnDefinition/></Grid.ColumnDefinitions>
+                <StackPanel>
+                  <TextBlock Text="Key file (optional)" Style="{StaticResource Text.Label}"/>
+                  <TextBox Style="{StaticResource Input.Mono}" Text="{Binding KeyFile}"/>
+                  <TextBlock Style="{StaticResource Text.Help}" Text="Leave empty to use your SSH agent or ~/.ssh/config."/>
+                </StackPanel>
+                <StackPanel Grid.Column="2">
+                  <TextBlock Text="Jump host (optional)" Style="{StaticResource Text.Label}"/>
+                  <TextBox Style="{StaticResource Input.Mono}" Text="{Binding JumpHost}"/>
+                  <TextBlock Style="{StaticResource Text.Help}" Text="Connect through this host first."/>
+                </StackPanel>
+              </Grid>
+            </Expander>
+          </StackPanel>
+          <TextBlock Text="{Binding Preview}" Style="{StaticResource Text.Secondary}" Margin="0,12,0,0" Visibility="{Binding Preview, Converter={StaticResource Visible}}"/>
+          <CheckBox IsChecked="{Binding Favorite}" Content="Show in favorites" Margin="0,12,0,0"/>
+          <Expander Header="Advanced settings" IsExpanded="{Binding AdvancedOpen}" Margin="0,8,0,0">
+            <StackPanel Margin="0,12,0,0">
+              <StackPanel x:Name="PasswordPanel" Margin="0,0,0,8">
+                <TextBlock Text="Password (optional)" Style="{StaticResource Text.Label}"/>
+                <PasswordBox x:Name="PasswordInput" AutomationProperties.Name="Password"/>
+                <TextBlock Style="{StaticResource Text.Help}" Text="{Binding PasswordStatus}"/>
+              </StackPanel>
+              <d:DisplayOptions DataContext="{Binding Options}" x:Name="InlineDisplay" Margin="0,0,0,8"/>
+              <Grid>
+                <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="16"/><ColumnDefinition/></Grid.ColumnDefinitions>
+                <StackPanel>
+                  <TextBlock Text="Group" Style="{StaticResource Text.Label}"/>
+                  <ComboBox IsEditable="True" ItemsSource="{Binding Folders}" Text="{Binding Folder}" AutomationProperties.Name="Group"/>
+                </StackPanel>
+                <StackPanel Grid.Column="2">
+                  <TextBlock Text="Operating system" Style="{StaticResource Text.Label}"/>
+                  <ComboBox IsEditable="True" ItemsSource="{Binding OsSuggestions}" Text="{Binding Os}" AutomationProperties.Name="Operating system"/>
+                </StackPanel>
+              </Grid>
+              <Grid Margin="0,16,0,0">
+                <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="16"/><ColumnDefinition/></Grid.ColumnDefinitions>
+                <StackPanel>
+                  <TextBlock Text="Location" Style="{StaticResource Text.Label}"/>
+                  <TextBox Text="{Binding Location}" AutomationProperties.Name="Location"/>
+                </StackPanel>
+                <StackPanel Grid.Column="2">
+                  <TextBlock Text="Tags" Style="{StaticResource Text.Label}"/>
+                  <TextBox Text="{Binding Tags}" AutomationProperties.Name="Tags"/>
+                  <TextBlock Style="{StaticResource Text.Help}" Text="Separate tags with commas."/>
+                </StackPanel>
+              </Grid>
+              <TextBlock Text="Description" Style="{StaticResource Text.Label}" Margin="0,16,0,4"/>
+              <TextBox Style="{StaticResource TextArea}" Text="{Binding Description}" AutomationProperties.Name="Description"/>
+            </StackPanel>
+          </Expander>
+        </StackPanel>
+      </TabItem>
+      <TabItem Header="Display" x:Name="DisplayTab">
+        <d:DisplayOptions DataContext="{Binding Options}"/>
+      </TabItem>
+      <TabItem Header="Devices and clipboard" x:Name="DevicesTab">
+        <StackPanel>
+          <TextBlock Style="{StaticResource Text.Secondary}" FontSize="14" Margin="0,0,0,8" Text="Allow only what you need. Your administrators may restrict these options on the server."/>
+          <d:DeviceOptions DataContext="{Binding Options}"/>
+        </StackPanel>
+      </TabItem>
+      <TabItem Header="Gateway and security" x:Name="AdvancedTab">
+        <d:AdvancedOptions DataContext="{Binding Options}" x:Name="Advanced"/>
+      </TabItem>
+    </TabControl>
+  </StackPanel>
+</UserControl>

@@ -1,0 +1,29 @@
+<UserControl x:Class="RdpManager.App.Views.Dialogs.NotificationsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:RdpManager.App.Controls"
+             xmlns:vm="clr-namespace:RdpManager.App.ViewModels">
+  <Grid>
+    <TextBlock Text="No notifications in this app session." Style="{StaticResource Text.Secondary}" FontSize="14"
+               Visibility="{Binding Notifications.Count, Converter={StaticResource Visible}, ConverterParameter=invert}"/>
+    <ItemsControl ItemsSource="{Binding Notifications}" Focusable="False" MaxHeight="480">
+      <ItemsControl.Template>
+        <ControlTemplate><ScrollViewer VerticalScrollBarVisibility="Auto" Focusable="False"><ItemsPresenter/></ScrollViewer></ControlTemplate>
+      </ItemsControl.Template>
+      <ItemsControl.ItemTemplate>
+        <DataTemplate DataType="vm:Notification">
+          <Border BorderBrush="{StaticResource Gray100Brush}" BorderThickness="0,0,0,1" Padding="0,12">
+            <DockPanel>
+              <c:Icon DockPanel.Dock="Left" Data="{Binding Icon, Converter={StaticResource Icon}}" Foreground="{Binding Kind, Converter={StaticResource KindBrush}}" Margin="0,0,12,0" VerticalAlignment="Top"/>
+              <StackPanel>
+                <TextBlock Text="{Binding Title}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                <TextBlock Text="{Binding Message}" Style="{StaticResource Text.Secondary}" Visibility="{Binding Message, Converter={StaticResource Visible}}"/>
+                <TextBlock Text="{Binding When}" Style="{StaticResource Text.Secondary}"/>
+              </StackPanel>
+            </DockPanel>
+          </Border>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+  </Grid>
+</UserControl>
